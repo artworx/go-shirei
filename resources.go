@@ -151,6 +151,7 @@ func (r *Resources) syncShapeCachesToEpoch() {
 	r.segmentShapeCache = lru.New[uint64, GlyphsSegment](lru.WithCapacity(524288))
 	r.largeShapeCache = lru.New[uint64, ShapedText](lru.WithCapacity(2))
 	r.largeUnwrappedCache = lru.New[uint64, unwrappedShaped](lru.WithCapacity(2))
+	lastLargeShape.valid = false
 	r.shapeCacheEpoch = epoch
 }
 
