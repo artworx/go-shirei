@@ -1392,6 +1392,10 @@ func shapeTextMaxFlat(text string, style TextStyleAttrs, maxWidth float32, flat 
 	ShapeStats.Calls++
 
 	res.syncShapeCachesToEpoch()
+	cache, unwrappedCache := res.shapeCache, res.unwrappedCache
+	if len(text) > 16*1024 {
+		cache, unwrappedCache = res.largeShapeCache, res.largeUnwrappedCache
+	}
 
 	// Unwrapped key: paragraph + font request. No wrap width — HarfBuzz
 	// does not depend on the column. Registry changes drop the LRUs
@@ -1402,7 +1406,7 @@ func shapeTextMaxFlat(text string, style TextStyleAttrs, maxWidth float32, flat 
 	wPx := wrapWidthDevicePx(maxWidth)
 	wKey := hashWrapKey(uKey, wPx)
 
-	if cached, ok := res.shapeCache.Get(wKey); ok {
+	if cached, ok := cache.Get(wKey); ok {
 		ShapeStats.Hits++
 		ShapeStats.ShapeHits++
 		return cached
@@ -1410,10 +1414,10 @@ func shapeTextMaxFlat(text string, style TextStyleAttrs, maxWidth float32, flat 
 
 	width := wrapWidthLogical(wPx)
 
-	if u, ok := res.unwrappedCache.Get(uKey); ok {
+	if u, ok := unwrappedCache.Get(uKey); ok {
 		ShapeStats.ShapeHits++
 		shaped := wrapUnwrapped(u, style, width)
-		res.shapeCache.Set(wKey, shaped)
+		cache.Set(wKey, shaped)
 		return shaped
 	}
 
@@ -1425,9 +1429,9 @@ func shapeTextMaxFlat(text string, style TextStyleAttrs, maxWidth float32, flat 
 		BaseDir:  segs[0].Dir,
 		Segments: segs,
 	}
-	res.unwrappedCache.Set(uKey, u)
+	unwrappedCache.Set(uKey, u)
 	shaped := wrapUnwrapped(u, style, width)
-	res.shapeCache.Set(wKey, shaped)
+	cache.Set(wKey, shaped)
 	return shaped
 }
 
