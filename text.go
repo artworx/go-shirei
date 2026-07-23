@@ -166,31 +166,10 @@ func overlayStyle(dst, spanStyle, base TextStyleAttrs) TextStyleAttrs {
 	return dst
 }
 
-// spanBreakpoints returns sorted unique From/To endpoints of spans, clamped
-// to [0, textLen]. Empty/inverted ranges contribute nothing.
-func spanBreakpoints(spans []StyleSpan, textLen int) []int {
-	if textLen < 0 {
-		textLen = 0
-	}
-	out := make([]int, 0, len(spans)*2)
-	for _, sp := range spans {
-		from, to := sp.From, sp.To
-		if from < 0 {
-			from = 0
-		}
-		if to > textLen {
-			to = textLen
-		}
-		if from >= to {
-			continue
-		}
-		out = append(out, from, to)
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	slices.Sort(out)
-	return slices.Compact(out)
+type styleSpanEvent struct {
+	position int
+	span     int
+	start    bool
 }
 
 // flattenStyleSpans composes overlapping spans into disjoint fully-resolved
@@ -201,45 +180,64 @@ func flattenStyleSpans(base TextStyleAttrs, spans []StyleSpan, textLen int) []St
 	if len(spans) == 0 || textLen <= 0 {
 		return nil
 	}
-	bps := spanBreakpoints(spans, textLen)
-	if len(bps) < 2 {
+	normalized := make([]StyleSpan, 0, len(spans))
+	events := make([]styleSpanEvent, 0, len(spans)*2)
+	for _, span := range spans {
+		span.From = max(0, span.From)
+		span.To = min(textLen, span.To)
+		if span.From >= span.To {
+			continue
+		}
+		index := len(normalized)
+		normalized = append(normalized, span)
+		events = append(events,
+			styleSpanEvent{position: span.From, span: index, start: true},
+			styleSpanEvent{position: span.To, span: index},
+		)
+	}
+	if len(events) < 2 {
 		return nil
 	}
-	var out []StyleSpan
-	for i := 0; i < len(bps)-1; i++ {
-		a, b := bps[i], bps[i+1]
-		if a >= b {
+	sort.Slice(events, func(i, j int) bool { return events[i].position < events[j].position })
+
+	active := make([]int, 0, 4)
+	out := make([]StyleSpan, 0, len(normalized))
+	for i := 0; i < len(events); {
+		position := events[i].position
+		j := i
+		for j < len(events) && events[j].position == position {
+			event := events[j]
+			at := sort.SearchInts(active, event.span)
+			if event.start {
+				active = append(active, 0)
+				copy(active[at+1:], active[at:])
+				active[at] = event.span
+			} else if at < len(active) && active[at] == event.span {
+				copy(active[at:], active[at+1:])
+				active = active[:len(active)-1]
+			}
+			j++
+		}
+		if j == len(events) || position >= events[j].position || len(active) == 0 {
+			i = j
 			continue
 		}
-		// Is this atom covered by any span?
-		covered := false
 		st := base
-		for _, sp := range spans {
-			from, to := sp.From, sp.To
-			if from < 0 {
-				from = 0
-			}
-			if to > textLen {
-				to = textLen
-			}
-			if from >= to {
-				continue
-			}
-			// atom wholly inside span (breakpoints guarantee no partial cover)
-			if a >= from && b <= to {
-				covered = true
-				st = overlayStyle(st, sp.Style, base)
-			}
+		for _, index := range active {
+			st = overlayStyle(st, normalized[index].Style, base)
 		}
-		if !covered || textStylesEqual(st, base) {
+		if textStylesEqual(st, base) {
+			i = j
 			continue
 		}
-		// coalesce with previous if same style and adjacent
-		if n := len(out); n > 0 && out[n-1].To == a && textStylesEqual(out[n-1].Style, st) {
-			out[n-1].To = b
+		next := events[j].position
+		if n := len(out); n > 0 && out[n-1].To == position && textStylesEqual(out[n-1].Style, st) {
+			out[n-1].To = next
+			i = j
 			continue
 		}
-		out = append(out, StyleSpan{From: a, To: b, Style: st})
+		out = append(out, StyleSpan{From: position, To: next, Style: st})
+		i = j
 	}
 	return out
 }
