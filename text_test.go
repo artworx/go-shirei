@@ -1,6 +1,9 @@
 package shirei
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func requireTextShaping(t *testing.T) TextStyleAttrs {
 	t.Helper()
@@ -259,5 +262,24 @@ func TestShapeSegmentReusesCachedResult(t *testing.T) {
 	}
 	if first.Width != second.Width || len(first.Glyphs) != len(second.Glyphs) {
 		t.Fatalf("cached segment geometry changed: first=%+v second=%+v", first, second)
+	}
+}
+
+func TestLargeShapeCacheIsBoundedAndLRU(t *testing.T) {
+	attrs := requireTextShaping(t)
+	a := strings.Repeat("a", 16*1024+1)
+	b := strings.Repeat("b", 16*1024+1)
+	c := strings.Repeat("c", 16*1024+1)
+
+	ShapeStats.Calls = 0
+	ShapeStats.Hits = 0
+	_ = ShapeText(a, attrs)
+	_ = ShapeText(b, attrs)
+	_ = ShapeText(a, attrs) // refresh a; b is now least recently used
+	_ = ShapeText(c, attrs) // evicts b
+	_ = ShapeText(b, attrs) // must miss
+
+	if ShapeStats.Calls != 5 || ShapeStats.Hits != 1 {
+		t.Fatalf("large shape cache calls=%d hits=%d, want calls=5 hits=1", ShapeStats.Calls, ShapeStats.Hits)
 	}
 }
