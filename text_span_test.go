@@ -148,6 +148,34 @@ func TestShapeTextResolvedMaxMatchesDeferredSpans(t *testing.T) {
 	}
 }
 
+func TestShapedTextLineMetricsReportsOnlyUsedDecorations(t *testing.T) {
+	base := DefaultTextStyle()
+	line := ShapedTextLine{Segments: []GlyphsSegment{{Glyphs: []Glyph{{Cluster: 0}, {Cluster: 1}}}}}
+	fontOnly := base
+	fontOnly.FontSize = base.FontSize * 2
+
+	lineEm, background, underline, strike := shapedTextLineMetrics(&line, base, []StyleSpan{{From: 0, To: 2, Style: fontOnly}})
+	if lineEm != fontOnly.FontSize {
+		t.Fatalf("line em = %v, want %v", lineEm, fontOnly.FontSize)
+	}
+	if background || underline || strike {
+		t.Fatalf("font-only span reported decorations: background=%v underline=%v strike=%v", background, underline, strike)
+	}
+
+	withBackground := base
+	withBackground.Background = Vec4{1, 1, 1, 1}
+	withLines := base
+	withLines.Underline = true
+	withLines.Strike = true
+	_, background, underline, strike = shapedTextLineMetrics(&line, base, []StyleSpan{
+		{From: 0, To: 1, Style: withBackground},
+		{From: 1, To: 2, Style: withLines},
+	})
+	if !background || !underline || !strike {
+		t.Fatalf("decorated spans reported background=%v underline=%v strike=%v", background, underline, strike)
+	}
+}
+
 func TestShapeTextColorOnlySpanCacheHit(t *testing.T) {
 	attrs := requireTextShaping(t)
 	text := "hello world"
