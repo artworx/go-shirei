@@ -320,6 +320,25 @@ func TestFlattenStyleSpansContained(t *testing.T) {
 	}
 }
 
+func TestFlattenStyleSpansSharedBoundariesKeepSourceOrder(t *testing.T) {
+	base := DefaultTextStyle()
+	base.TextColor = Vec4{0, 0, 0, 1}
+	first := ResolveSpan(0, 5, base, TextColor(10, 80, 50, 1))
+	second := ResolveSpan(0, 5, base, TextColor(210, 80, 50, 1))
+	continuation := ResolveSpan(5, 10, base, FontWeight(WeightBold))
+
+	flat := flattenStyleSpans(base, []StyleSpan{first, second, continuation}, 10)
+	if len(flat) != 2 {
+		t.Fatalf("flat = %+v, want two ranges", flat)
+	}
+	if flat[0].From != 0 || flat[0].To != 5 || flat[0].Style.TextColor != second.Style.TextColor {
+		t.Fatalf("first range = %+v, want later color to win", flat[0])
+	}
+	if flat[1].From != 5 || flat[1].To != 10 || flat[1].Style.Weight != WeightBold {
+		t.Fatalf("second range = %+v, want bold continuation", flat[1])
+	}
+}
+
 func TestFlattenStyleSpansAdjacent(t *testing.T) {
 	base := DefaultTextStyle()
 	a := ResolveSpan(0, 5, base, FontWeight(WeightBold))
