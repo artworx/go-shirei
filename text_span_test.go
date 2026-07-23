@@ -129,6 +129,25 @@ func TestResolveTextSpans(t *testing.T) {
 	}
 }
 
+func TestShapeTextResolvedMaxMatchesDeferredSpans(t *testing.T) {
+	attrs := requireTextShaping(t)
+	text := "pre-resolved span shaping"
+	deferred := Span(4, 12, FontWeight(WeightBold), FontSize(attrs.FontSize*1.5))
+	resolved := ResolveStyleSpans(attrs, resolveTextSpans(attrs, []TextSpan{deferred}), len([]rune(text)))
+
+	fromDeferred := ShapeTextMax(text, attrs, 180, deferred)
+	fromResolved := ShapeTextResolvedMax(text, attrs, 180, resolved...)
+	if len(fromDeferred.Lines) != len(fromResolved.Lines) {
+		t.Fatalf("line counts differ: deferred=%d resolved=%d", len(fromDeferred.Lines), len(fromResolved.Lines))
+	}
+	for index := range fromDeferred.Lines {
+		if fromDeferred.Lines[index].Width != fromResolved.Lines[index].Width ||
+			fromDeferred.Lines[index].Height != fromResolved.Lines[index].Height {
+			t.Fatalf("line %d geometry differs: deferred=%+v resolved=%+v", index, fromDeferred.Lines[index], fromResolved.Lines[index])
+		}
+	}
+}
+
 func TestShapeTextColorOnlySpanCacheHit(t *testing.T) {
 	attrs := requireTextShaping(t)
 	text := "hello world"
