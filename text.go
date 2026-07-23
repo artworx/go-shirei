@@ -525,6 +525,20 @@ func lineFirstCluster(line *ShapedTextLine) int {
 	return first
 }
 
+func shapedTextLineMetrics(line *ShapedTextLine, style TextStyleAttrs, spans []StyleSpan) (lineEm float32, hasBackground, hasUnderline, hasStrike bool) {
+	lineEm = style.FontSize
+	for _, segment := range line.Segments {
+		for _, glyph := range segment.Glyphs {
+			resolved := resolvedStyleAt(style, spans, int(glyph.Cluster))
+			lineEm = max(lineEm, resolved.FontSize)
+			hasBackground = hasBackground || resolved.Background != (Vec4{})
+			hasUnderline = hasUnderline || resolved.Underline
+			hasStrike = hasStrike || resolved.Strike
+		}
+	}
+	return
+}
+
 func ShapedTextLineLayout(line *ShapedTextLine, style TextStyleAttrs, spans []StyleSpan, baseDir Direction, selectionFrom int, selectionTo int, nextLinePaddingTop *f32) {
 	// the line box is lineEm tall (max em on the line); the rest of the line
 	// height (the leading) is applied as top padding, spacing this line from
@@ -536,6 +550,7 @@ func ShapedTextLineLayout(line *ShapedTextLine, style TextStyleAttrs, spans []St
 	hasSpans := len(spans) > 0
 
 	lineEm := line.lineEm
+	_, hasBackground, hasUnderline, hasStrike := shapedTextLineMetrics(line, style, spans)
 	if lineEm <= 0 {
 		lineEm = style.FontSize
 	}
@@ -617,10 +632,12 @@ func ShapedTextLineLayout(line *ShapedTextLine, style TextStyleAttrs, spans []St
 		}
 
 		var rects []paintRect
-		if hasSpans {
+		if hasBackground {
 			appendAdvanceBands(&rects, stamps, leading, lineEm, func(g *glyphStamp) Vec4 {
 				return resolvedStyleAt(style, spans, int(g.Cluster)).Background
 			})
+		}
+		if hasUnderline {
 			appendAdvanceBands(&rects, stamps, leading+lineEm+1, 1, func(g *glyphStamp) Vec4 {
 				st := resolvedStyleAt(style, spans, int(g.Cluster))
 				if st.Underline {
@@ -628,6 +645,8 @@ func ShapedTextLineLayout(line *ShapedTextLine, style TextStyleAttrs, spans []St
 				}
 				return Vec4{}
 			})
+		}
+		if hasStrike {
 			appendAdvanceBands(&rects, stamps, leading+lineEm*0.55, 1, func(g *glyphStamp) Vec4 {
 				st := resolvedStyleAt(style, spans, int(g.Cluster))
 				if st.Strike {
