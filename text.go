@@ -251,6 +251,12 @@ func effectiveSpans(base TextStyleAttrs, spans []StyleSpan, textLen int) []Style
 	return flattenStyleSpans(base, spans, textLen)
 }
 
+// ResolveStyleSpans composes and clamps complete style spans once so rich-text
+// producers can reuse the same resolved ranges for shaping and layout.
+func ResolveStyleSpans(base TextStyleAttrs, spans []StyleSpan, textLen int) []StyleSpan {
+	return effectiveSpans(base, spans, textLen)
+}
+
 // styleRun is a disjoint resolved range after last-wins evaluation.
 type styleRun struct {
 	From, To int
@@ -1378,6 +1384,11 @@ func ShapeTextMax(text string, style TextStyleAttrs, maxWidth float32, spans ...
 		flat = effectiveSpans(style, resolveTextSpans(style, spans), utf8.RuneCountInString(text))
 	}
 	return shapeTextMaxFlat(text, style, maxWidth, flat)
+}
+
+// ShapeTextResolvedMax accepts complete style spans from rich-text producers.
+func ShapeTextResolvedMax(text string, style TextStyleAttrs, maxWidth float32, spans ...StyleSpan) ShapedText {
+	return shapeTextMaxFlat(text, style, maxWidth, effectiveSpans(style, spans, utf8.RuneCountInString(text)))
 }
 
 // shapeTextMaxFlat is ShapeTextMax after span resolution: flat must be
