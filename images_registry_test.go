@@ -1,8 +1,12 @@
 package shirei
 
 import (
+	"bytes"
 	"image"
+	"image/png"
+	"os"
 	"testing"
+	"time"
 )
 
 func fillRGBA(v byte) *image.RGBA {
@@ -190,4 +194,51 @@ func TestShadowKeyDoesNotCollideWithStringKey(t *testing.T) {
 	if imageIdForKey("unrelated-app-key") != aid {
 		t.Fatal("shadow registration must not disturb string key entry")
 	}
+}
+
+func TestLoadImageDoesNotReadLargeFileOnCaller(t *testing.T) {
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, fillRGBA(0x44)); err != nil {
+		t.Fatal(err)
+	}
+	content := encoded.Bytes()
+	content = append(content, make([]byte, 500*1024+1-len(content))...)
+	path := t.TempDir() + "/large.png"
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	originalRead := readImageFileContent
+	started := make(chan struct{})
+	release := make(chan struct{})
+	released := false
+	defer func() {
+		readImageFileContent = originalRead
+		if !released {
+			close(release)
+		}
+	}()
+	readImageFileContent = func(path string) ([]byte, error) {
+		close(started)
+		<-release
+		return os.ReadFile(path)
+	}
+
+	loaded := make(chan *ImageData, 1)
+	go func() { loaded <- LoadImage(path) }()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("background image read did not start")
+	}
+	select {
+	case imageData := <-loaded:
+		if imageData.Config.Width != 4 || imageData.Config.Height != 4 {
+			t.Fatalf("header dimensions = %dx%d, want 4x4", imageData.Config.Width, imageData.Config.Height)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("LoadImage waited for the blocked large-file read")
+	}
+	close(release)
+	released = true
 }
