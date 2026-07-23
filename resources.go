@@ -45,6 +45,7 @@ type Resources struct {
 	largeShapeCache *lru.Cache[uint64, ShapedText]
 	largeUnwrappedCache *lru.Cache[uint64, unwrappedShaped]
 	segmentShapeCache *lru.Cache[uint64, GlyphsSegment]
+	bidiLineCache *lru.Cache[string, []Direction]
 	coloredGlyphCache *lru.Cache[coloredGlyphKey, *GlyphRunData]
 
 	// CachedMeasure results (hash(key)+maxSize+host salts → size)
@@ -98,6 +99,7 @@ func NewResources() *Resources {
 		segmentShapeCache: lru.New[uint64, GlyphsSegment](lru.WithCapacity(524288)),
 		largeShapeCache: lru.New[uint64, ShapedText](lru.WithCapacity(2)),
 		largeUnwrappedCache: lru.New[uint64, unwrappedShaped](lru.WithCapacity(2)),
+		bidiLineCache: lru.New[string, []Direction](lru.WithCapacity(65536)),
 		faces:               make([]FontFace, 1),
 		faceMap:             make(map[FaceLookupKey]FontId),
 		hbfonts:             make(map[FontId]*harfbuzz.Font),
