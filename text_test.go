@@ -283,3 +283,28 @@ func TestLargeShapeCacheIsBoundedAndLRU(t *testing.T) {
 		t.Fatalf("large shape cache calls=%d hits=%d, want calls=5 hits=1", ShapeStats.Calls, ShapeStats.Hits)
 	}
 }
+
+func TestLargeSameWidthEditReshapesOneSegment(t *testing.T) {
+	attrs := requireTextShaping(t)
+	text := strings.Repeat("aaaaaaaaaaaaaaaa\n", 1100)
+	initial := ShapeText(text, attrs)
+	if len(initial.Runes) <= 16*1024 {
+		t.Fatal("fixture must use the large-document path")
+	}
+
+	edited := []byte(text)
+	edited[5] = 'b'
+	SegmentShapeStats.Calls = 0
+	SegmentShapeStats.Hits = 0
+	shaped := ShapeText(string(edited), attrs)
+
+	if SegmentShapeStats.Calls != 1 {
+		t.Fatalf("edited document shaped %d segments, want exactly 1", SegmentShapeStats.Calls)
+	}
+	if shaped.Runes[5] != 'b' {
+		t.Fatalf("edited rune = %q, want b", shaped.Runes[5])
+	}
+	if len(shaped.Lines) != len(initial.Lines) {
+		t.Fatalf("line count changed from %d to %d", len(initial.Lines), len(shaped.Lines))
+	}
+}
