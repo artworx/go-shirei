@@ -42,6 +42,8 @@ type Resources struct {
 	unwrappedCache    *lru.Cache[uint64, unwrappedShaped]
 	shapeCache        *lru.Cache[uint64, ShapedText]
 	shapeCacheEpoch   uint64
+	largeShapeCache *lru.Cache[uint64, ShapedText]
+	largeUnwrappedCache *lru.Cache[uint64, unwrappedShaped]
 	segmentShapeCache *lru.Cache[uint64, GlyphsSegment]
 	coloredGlyphCache *lru.Cache[coloredGlyphKey, *GlyphRunData]
 
@@ -94,6 +96,8 @@ type Resources struct {
 func NewResources() *Resources {
 	r := &Resources{
 		segmentShapeCache: lru.New[uint64, GlyphsSegment](lru.WithCapacity(524288)),
+		largeShapeCache: lru.New[uint64, ShapedText](lru.WithCapacity(2)),
+		largeUnwrappedCache: lru.New[uint64, unwrappedShaped](lru.WithCapacity(2)),
 		faces:               make([]FontFace, 1),
 		faceMap:             make(map[FaceLookupKey]FontId),
 		hbfonts:             make(map[FontId]*harfbuzz.Font),
@@ -145,6 +149,8 @@ func (r *Resources) syncShapeCachesToEpoch() {
 	r.shapeCache = lru.New[uint64, ShapedText](lru.WithCapacity(shapeCacheCap))
 	r.coloredGlyphCache = lru.New[coloredGlyphKey, *GlyphRunData](lru.WithCapacity(shapeCacheCap))
 	r.segmentShapeCache = lru.New[uint64, GlyphsSegment](lru.WithCapacity(524288))
+	r.largeShapeCache = lru.New[uint64, ShapedText](lru.WithCapacity(2))
+	r.largeUnwrappedCache = lru.New[uint64, unwrappedShaped](lru.WithCapacity(2))
 	r.shapeCacheEpoch = epoch
 }
 
