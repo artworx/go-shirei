@@ -320,3 +320,27 @@ func TestBidiLineDirectionsReuseCachedSlice(t *testing.T) {
 		t.Fatal("repeated bidi line did not reuse the cached direction slice")
 	}
 }
+
+func TestCalculateShapedTextViewportWindow(t *testing.T) {
+	style := DefaultTextStyle()
+	style.FontSize = 20
+	shaped := ShapedText{Lines: make([]ShapedTextLine, 100)}
+	for index := range shaped.Lines {
+		shaped.Lines[index] = ShapedTextLine{
+			Height:   20,
+			Segments: []GlyphsSegment{{GlyphSegmentProps: GlyphSegmentProps{size: 20}}},
+		}
+	}
+
+	window := calculateShapedTextViewportWindow(shaped, style, 800, 200)
+	if window.start != 34 || window.end != 56 {
+		t.Fatalf("visible line range = [%d,%d), want [34,56)", window.start, window.end)
+	}
+	if window.topSpacer != 680 || window.bottomSpacer != 880 {
+		t.Fatalf("spacers = top %.1f bottom %.1f, want 680 and 880", window.topSpacer, window.bottomSpacer)
+	}
+	visibleHeight := float32(window.end-window.start) * 20
+	if window.topSpacer+visibleHeight+window.bottomSpacer != 2000 {
+		t.Fatalf("virtualized height = %.1f, want full height 2000", window.topSpacer+visibleHeight+window.bottomSpacer)
+	}
+}
