@@ -239,3 +239,25 @@ func TestShapeCacheSharesUnwrappedAcrossWidths(t *testing.T) {
 		t.Fatalf("quantized widths: hits=%d shapeHits=%d (want 1/1)", ShapeStats.Hits, ShapeStats.ShapeHits)
 	}
 }
+
+func TestShapeSegmentReusesCachedResult(t *testing.T) {
+	attrs := requireTextShaping(t)
+	probe := ShapeText("segment-cache-probe", attrs)
+	if len(probe.Lines) == 0 || len(probe.Lines[0].Segments) == 0 {
+		t.Fatal("probe produced no shaped segment")
+	}
+	props := probe.Lines[0].Segments[0].GlyphSegmentProps
+	runes := []rune("segment-cache-value")
+
+	SegmentShapeStats.Calls = 0
+	SegmentShapeStats.Hits = 0
+	first := shapeSegment(props, runes, 0, len(runes))
+	second := shapeSegment(props, runes, 0, len(runes))
+
+	if SegmentShapeStats.Calls != 2 || SegmentShapeStats.Hits != 1 {
+		t.Fatalf("segment cache calls=%d hits=%d, want calls=2 hits=1", SegmentShapeStats.Calls, SegmentShapeStats.Hits)
+	}
+	if first.Width != second.Width || len(first.Glyphs) != len(second.Glyphs) {
+		t.Fatalf("cached segment geometry changed: first=%+v second=%+v", first, second)
+	}
+}

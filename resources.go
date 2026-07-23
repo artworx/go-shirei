@@ -42,6 +42,7 @@ type Resources struct {
 	unwrappedCache    *lru.Cache[uint64, unwrappedShaped]
 	shapeCache        *lru.Cache[uint64, ShapedText]
 	shapeCacheEpoch   uint64
+	segmentShapeCache *lru.Cache[uint64, GlyphsSegment]
 	coloredGlyphCache *lru.Cache[coloredGlyphKey, *GlyphRunData]
 
 	// CachedMeasure results (hash(key)+maxSize+host salts → size)
@@ -92,6 +93,7 @@ type Resources struct {
 // for DirListing / ReadFileContent caches.
 func NewResources() *Resources {
 	r := &Resources{
+		segmentShapeCache: lru.New[uint64, GlyphsSegment](lru.WithCapacity(524288)),
 		faces:               make([]FontFace, 1),
 		faceMap:             make(map[FaceLookupKey]FontId),
 		hbfonts:             make(map[FontId]*harfbuzz.Font),
@@ -142,6 +144,7 @@ func (r *Resources) syncShapeCachesToEpoch() {
 	r.unwrappedCache = lru.New[uint64, unwrappedShaped](lru.WithCapacity(shapeCacheCap))
 	r.shapeCache = lru.New[uint64, ShapedText](lru.WithCapacity(shapeCacheCap))
 	r.coloredGlyphCache = lru.New[coloredGlyphKey, *GlyphRunData](lru.WithCapacity(shapeCacheCap))
+	r.segmentShapeCache = lru.New[uint64, GlyphsSegment](lru.WithCapacity(524288))
 	r.shapeCacheEpoch = epoch
 }
 
