@@ -227,6 +227,27 @@ func TestShapeTextSizeSpanWiderAdvances(t *testing.T) {
 	}
 }
 
+func TestShapeTextCachedStyleChangesAcrossHardLine(t *testing.T) {
+	attrs := requireTextShaping(t)
+	large := attrs.FontSize * 2
+	shaped := ShapeText("aa\nbb", attrs, Span(3, 5, FontSize(large)))
+	if len(shaped.Lines) != 2 {
+		t.Fatalf("line count = %d, want 2", len(shaped.Lines))
+	}
+	for _, segment := range shaped.Lines[0].Segments {
+		if segment.size != attrs.FontSize {
+			t.Fatalf("first-line segment size = %v, want %v", segment.size, attrs.FontSize)
+		}
+	}
+	foundLarge := false
+	for _, segment := range shaped.Lines[1].Segments {
+		foundLarge = foundLarge || segment.size == large
+	}
+	if !foundLarge {
+		t.Fatalf("second line has no segment with styled size %v", large)
+	}
+}
+
 func TestGlyphEmSize(t *testing.T) {
 	st := DefaultTextStyle()
 	st.FontSize = 22

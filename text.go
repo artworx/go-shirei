@@ -1077,19 +1077,55 @@ func produceShapedSegments(runes []rune, dirs []Direction, base TextStyleAttrs, 
 
 	var lineNo int
 
+	// Family resolution is cached upstream; memoize glyph fallback within this pass.
+	type faceCacheKey struct {
+		aspect FontAspect
+		families uint32
+	}
+	type glyphFaceKey struct {
+		face faceCacheKey
+		rune rune
+	}
+	glyphFaceCache := make(map[glyphFaceKey]FontId)
+
+	spanIndex := 0
+	styleAtIndex := func(index int) TextStyleAttrs {
+		for spanIndex < len(spans) && spans[spanIndex].To <= index {
+			spanIndex++
+		}
+		if spanIndex < len(spans) && spans[spanIndex].From <= index {
+			return spans[spanIndex].Style
+		}
+		return base
+	}
+	var currentStyle TextStyleAttrs
+	var currentFaceKey faceCacheKey
+	var currentFontIDs []FontId
+	var primary FontId
+	haveCurrentStyle := false
 	getSegmentProps := func(i int) GlyphSegmentProps {
 		ch := runes[i]
-		st := resolvedStyleAt(base, spans, i)
-		ids, primary := st.fontFamilies.resolve(st.FontAspect)
-		if primary == 0 {
-			primary, _ = findMatchingFontAndGlyph(' ', ids, st.FontAspect)
+		st := styleAtIndex(i)
+		if !haveCurrentStyle || !fontShapeEqual(currentStyle, st) {
+			currentStyle = st
+			currentFaceKey = faceCacheKey{aspect: st.FontAspect, families: familyListId(st.fontFamilies)}
+			currentFontIDs, primary = st.fontFamilies.resolve(st.FontAspect)
+			if primary == 0 {
+				primary, _ = findMatchingFontAndGlyph(' ', currentFontIDs, st.FontAspect)
+			}
+			haveCurrentStyle = true
 		}
-		fontChar := ch
+		lookupCh := ch
 		if ch == '\n' || ch == '\t' {
 			// Structural whitespace uses the same face as ordinary spaces.
-			fontChar = ' '
+			lookupCh = ' '
 		}
-		font, _ := findMatchingFontAndGlyph(fontChar, ids, st.FontAspect)
+		glyphKey := glyphFaceKey{face: currentFaceKey, rune: lookupCh}
+		font, ok := glyphFaceCache[glyphKey]
+		if !ok {
+			font, _ = findMatchingFontAndGlyph(lookupCh, currentFontIDs, st.FontAspect)
+			glyphFaceCache[glyphKey] = font
+		}
 		return GlyphSegmentProps{
 			font:    font,
 			metrics: primary,
