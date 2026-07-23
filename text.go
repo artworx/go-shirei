@@ -1349,6 +1349,15 @@ var ShapeStats struct {
 	ShapeHits int64
 }
 
+var lastLargeShape struct {
+	text     string
+	style    TextStyleAttrs
+	maxWidth float32
+	spans    []StyleSpan
+	shaped   ShapedText
+	valid    bool
+}
+
 // ShapeText shapes text with no soft-wrap width (single long lines until
 // hard breaks). Prefer ShapeTextMax when the wrap budget is known.
 // style must be fully resolved — callers supply the base (no container cascade).
@@ -1398,19 +1407,28 @@ func shapeTextMaxFlat(text string, style TextStyleAttrs, maxWidth float32, flat 
 	if cached, ok := cache.Get(wKey); ok {
 		ShapeStats.Hits++
 		ShapeStats.ShapeHits++
+		if len(text) > 16*1024 { rememberLargeShape(text, style, wrapWidthLogical(wPx), flat, cached) }
 		return cached
 	}
 
 	width := wrapWidthLogical(wPx)
+	runes := []rune(text)
+	if len(text) > 16*1024 {
+		if incremental, ok := tryIncrementalSameWidthShape(runes, style, width, flat); ok {
+			cache.Set(wKey, incremental)
+			rememberLargeShape(text, style, width, flat, incremental)
+			return incremental
+		}
+	}
 
 	if u, ok := unwrappedCache.Get(uKey); ok {
 		ShapeStats.ShapeHits++
 		shaped := wrapUnwrapped(u, style, width)
 		cache.Set(wKey, shaped)
+	if len(text) > 16*1024 { rememberLargeShape(text, style, width, flat, shaped) }
 		return shaped
 	}
 
-	runes := []rune(text)
 	dirs := ParagraphBidi(text)
 	segs := produceShapedSegments(runes, dirs, style, flat)
 	u := unwrappedShaped{
@@ -1421,6 +1439,7 @@ func shapeTextMaxFlat(text string, style TextStyleAttrs, maxWidth float32, flat 
 	unwrappedCache.Set(uKey, u)
 	shaped := wrapUnwrapped(u, style, width)
 	cache.Set(wKey, shaped)
+	if len(text) > 16*1024 { rememberLargeShape(text, style, width, flat, shaped) }
 	return shaped
 }
 
@@ -1489,6 +1508,115 @@ func wrapWidthLogical(px int) float32 {
 		scale = 1
 	}
 	return float32(px) / scale
+}
+
+func rememberLargeShape(text string, style TextStyleAttrs, maxWidth float32, spans []StyleSpan, shaped ShapedText) {
+	lastLargeShape.text = text
+	lastLargeShape.style = style
+	lastLargeShape.maxWidth = maxWidth
+	lastLargeShape.spans = slices.Clone(spans)
+	lastLargeShape.shaped = shaped
+	lastLargeShape.valid = true
+}
+
+// tryIncrementalSameWidthShape handles safe, short overwrites in large text.
+// It reuses every immutable line and segment except those intersecting the
+// changed range. Insertions, bidi changes, style changes, and reflow fall back
+// to the complete shaping path.
+func tryIncrementalSameWidthShape(runes []rune, style TextStyleAttrs, maxWidth float32, spans []StyleSpan) (ShapedText, bool) {
+	if !lastLargeShape.valid ||
+		len(runes) != len(lastLargeShape.shaped.Runes) ||
+		maxWidth != lastLargeShape.maxWidth ||
+		!fontShapeEqual(style, lastLargeShape.style) ||
+		!shapeSpansEqual(spans, lastLargeShape.spans) {
+		return ShapedText{}, false
+	}
+
+	oldRunes := lastLargeShape.shaped.Runes
+	from := 0
+	for from < len(runes) && runes[from] == oldRunes[from] {
+		from++
+	}
+	if from == len(runes) {
+		return ShapedText{}, false
+	}
+	to := len(runes)
+	for to > from && runes[to-1] == oldRunes[to-1] {
+		to--
+	}
+	if to-from > 256 {
+		return ShapedText{}, false
+	}
+	for index := from; index < to; index++ {
+		if runes[index] >= 128 || oldRunes[index] >= 128 ||
+			language.LookupScript(runes[index]) != language.LookupScript(oldRunes[index]) ||
+			isSpace(runes[index]) != isSpace(oldRunes[index]) {
+			return ShapedText{}, false
+		}
+	}
+
+	shaped := lastLargeShape.shaped
+	shaped.Runes = runes
+	shaped.Lines = slices.Clone(shaped.Lines)
+	changed := false
+	for lineIndex := range shaped.Lines {
+		line := &shaped.Lines[lineIndex]
+		lineCopied := false
+		for segmentIndex := range line.Segments {
+			segment := line.Segments[segmentIndex]
+			segmentEnd := segment.start + segment.length
+			if segmentEnd <= from || segment.start >= to {
+				continue
+			}
+			if segment.Dir != LTR {
+				return ShapedText{}, false
+			}
+			for index := max(from, segment.start); index < min(to, segmentEnd); index++ {
+				if LookupGlyph(segment.font, runes[index]) == 0 {
+					return ShapedText{}, false
+				}
+			}
+			updated := shapeSegment(segment.GlyphSegmentProps, runes, segment.start, segment.length)
+			if updated.Height != segment.Height || updated.EndsWithNewline != segment.EndsWithNewline {
+				return ShapedText{}, false
+			}
+			widthDelta := updated.Width - segment.Width
+			if widthDelta != 0 && maxWidth > 0 &&
+				(!line.Segments[len(line.Segments)-1].EndsWithNewline || line.Width+widthDelta > maxWidth) {
+				return ShapedText{}, false
+			}
+			if !lineCopied {
+				line.Segments = slices.Clone(line.Segments)
+				lineCopied = true
+			}
+			line.Segments[segmentIndex] = updated
+			line.Width += widthDelta
+			changed = true
+		}
+		if lineCopied {
+			// Rebuild upstream's cached paint geometry only for this changed line.
+			updatedLines := lineBreakShapedSegments(slices.Clone(line.Segments), style, maxWidth)
+			if len(updatedLines) != 1 { return ShapedText{}, false }
+			*line = updatedLines[0]
+		}
+	}
+	if !changed {
+		return ShapedText{}, false
+	}
+	return shaped, true
+}
+
+func shapeSpansEqual(a, b []StyleSpan) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for index := range a {
+		if a[index].From != b[index].From || a[index].To != b[index].To ||
+			!fontShapeEqual(a[index].Style, b[index].Style) {
+			return false
+		}
+	}
+	return true
 }
 
 func findMatchingFontAndGlyph(ch rune, fonts []FontId, aspect FontAspect) (FontId, GlyphId) {
