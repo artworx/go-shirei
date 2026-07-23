@@ -909,6 +909,8 @@ type GlyphsSegment struct {
 	// the style's primary face (not the coverage/fallback face). Line pad
 	// uses the max over the last line instead of GetFace per glyph.
 	descenderDepth float32
+	start           int
+	length          int
 }
 
 type Glyph struct {
@@ -929,8 +931,37 @@ type Glyph struct {
 // (res.hbfonts is accessed unsynchronized under the same assumption).
 var sharedShapeBuffer = harfbuzz.NewBuffer()
 
-func shapeSegment(props GlyphSegmentProps, text []rune, start, length int) (s GlyphsSegment) {
+var SegmentShapeStats struct {
+	Calls int64
+	Hits  int64
+}
+
+func shapeSegment(props GlyphSegmentProps, text []rune, start, length int) GlyphsSegment {
+	SegmentShapeStats.Calls++
+	hash := xxhash.New()
+	HashSlice(hash, text[start:start+length])
+	Hash(hash, &start)
+	Hash(hash, &props.font)
+	Hash(hash, &props.metrics)
+	Hash(hash, &props.size)
+	Hash(hash, &props.sc)
+	Hash(hash, &props.Dir)
+	Hash(hash, &props.isSpace)
+	Hash(hash, &props.lineNo)
+	key := hash.Sum64()
+	if cached, ok := res.segmentShapeCache.Get(key); ok {
+		SegmentShapeStats.Hits++
+		return cached
+	}
+	shaped := shapeSegmentUncached(props, text, start, length)
+	res.segmentShapeCache.Set(key, shaped)
+	return shaped
+}
+
+func shapeSegmentUncached(props GlyphSegmentProps, text []rune, start, length int) (s GlyphsSegment) {
 	s.GlyphSegmentProps = props
+	s.start = start
+	s.length = length
 	s.EndsWithNewline = length > 0 && text[start+length-1] == '\n'
 	s.Glyphs = make([]Glyph, 0, length)
 
