@@ -2,6 +2,7 @@ package shirei
 
 import (
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"unicode"
@@ -125,6 +126,16 @@ func styleAt(base TextStyleAttrs, spans []StyleSpan, i int) TextStyleAttrs {
 		}
 	}
 	return style
+}
+
+// resolvedStyleAt returns the style covering rune index i from the sorted,
+// non-overlapping spans produced by effectiveSpans.
+func resolvedStyleAt(base TextStyleAttrs, spans []StyleSpan, i int) TextStyleAttrs {
+	at := sort.Search(len(spans), func(at int) bool { return spans[at].To > i })
+	if at < len(spans) && i >= spans[at].From {
+		return spans[at].Style
+	}
+	return base
 }
 
 // overlayStyle copies into dst every field of spanStyle that differs from base
@@ -257,27 +268,28 @@ func resolveStyleRuns(base TextStyleAttrs, spans []StyleSpan, textLen int) []sty
 		return nil
 	}
 	runs := make([]styleRun, 0, len(spans)*2+1)
-	pos := 0
-	for _, sp := range spans {
-		from, to := sp.From, sp.To
-		if from < pos {
-			from = pos
+	appendRun := func(from, to int, style TextStyleAttrs) {
+		if from >= to {
+			return
 		}
-		if to > textLen {
-			to = textLen
+		if n := len(runs); n > 0 && runs[n-1].To == from && textStylesEqual(runs[n-1].Style, style) {
+			runs[n-1].To = to
+			return
 		}
+		runs = append(runs, styleRun{From: from, To: to, Style: style})
+	}
+	cursor := 0
+	for _, span := range spans {
+		from := min(textLen, max(cursor, span.From))
+		to := min(textLen, span.To)
 		if from >= to {
 			continue
 		}
-		if from > pos {
-			runs = append(runs, styleRun{From: pos, To: from, Style: base})
-		}
-		runs = append(runs, styleRun{From: from, To: to, Style: sp.Style})
-		pos = to
+		appendRun(cursor, from, base)
+		appendRun(from, to, span.Style)
+		cursor = to
 	}
-	if pos < textLen {
-		runs = append(runs, styleRun{From: pos, To: textLen, Style: base})
-	}
+	appendRun(cursor, textLen, base)
 	return runs
 }
 
@@ -585,7 +597,7 @@ func ShapedTextLineLayout(line *ShapedTextLine, style TextStyleAttrs, spans []St
 			if !ok {
 				colored := slices.Clone(line.runs)
 				for i := range colored {
-					colored[i].Color = styleAt(style, spans, int(stamps[i].Cluster)).TextColor
+					colored[i].Color = resolvedStyleAt(style, spans, int(stamps[i].Cluster)).TextColor
 				}
 				data = &GlyphRunData{glyphs: colored, hash: xxhash.Sum64(g.UnsafeSliceBytes(colored)), dependencies: line.runData.dependencies}
 				res.coloredGlyphCache.Set(key, data)
@@ -603,17 +615,17 @@ func ShapedTextLineLayout(line *ShapedTextLine, style TextStyleAttrs, spans []St
 		var rects []paintRect
 		if hasSpans {
 			appendAdvanceBands(&rects, stamps, leading, lineEm, func(g *glyphStamp) Vec4 {
-				return styleAt(style, spans, int(g.Cluster)).Background
+				return resolvedStyleAt(style, spans, int(g.Cluster)).Background
 			})
 			appendAdvanceBands(&rects, stamps, leading+lineEm+1, 1, func(g *glyphStamp) Vec4 {
-				st := styleAt(style, spans, int(g.Cluster))
+				st := resolvedStyleAt(style, spans, int(g.Cluster))
 				if st.Underline {
 					return st.TextColor
 				}
 				return Vec4{}
 			})
 			appendAdvanceBands(&rects, stamps, leading+lineEm*0.55, 1, func(g *glyphStamp) Vec4 {
-				st := styleAt(style, spans, int(g.Cluster))
+				st := resolvedStyleAt(style, spans, int(g.Cluster))
 				if st.Strike {
 					return st.TextColor
 				}
@@ -1021,7 +1033,7 @@ func produceShapedSegments(runes []rune, dirs []Direction, base TextStyleAttrs, 
 
 	getSegmentProps := func(i int) GlyphSegmentProps {
 		ch := runes[i]
-		st := styleAt(base, spans, i)
+		st := resolvedStyleAt(base, spans, i)
 		ids, primary := st.fontFamilies.resolve(st.FontAspect)
 		if primary == 0 {
 			primary, _ = findMatchingFontAndGlyph(' ', ids, st.FontAspect)
