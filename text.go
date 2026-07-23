@@ -1639,27 +1639,35 @@ func findMatchingFontAndGlyph(ch rune, fonts []FontId, aspect FontAspect) (FontI
 	return fontId, glyphId
 }
 
-// ParagraphBidi returns per-rune direction for txt. A function of the
-// string only; the unwrapped shape cache is the paragraph identity, so
-// this is not cached on its own.
+func bidiLineDirections(line string) []Direction {
+	if cached, ok := res.bidiLineCache.Get(line); ok {
+		return cached
+	}
+	var paragraph bidi.Paragraph
+	paragraph.SetString(line)
+	ordering, err := paragraph.Order()
+	if err != nil {
+		panic(err)
+	}
+	directions := make([]Direction, 0, len(line))
+	for index := range ordering.NumRuns() {
+		run := ordering.Run(index)
+		start, end := run.Pos() // end is inclusive
+		direction := Direction(run.Direction())
+		for position := start; position <= end; position++ {
+			directions = append(directions, direction)
+		}
+	}
+	res.bidiLineCache.Set(line, directions)
+	return directions
+}
+
+// ParagraphBidi returns per-rune directions, reusing unchanged line analysis.
 func ParagraphBidi(txt string) []Direction {
 	out := make([]Direction, 0, len(txt))
 
 	for line := range strings.SplitSeq(txt, "\n") {
-		var paragraph bidi.Paragraph
-		paragraph.SetString(line)
-		ordering, err := paragraph.Order()
-		if err != nil {
-			panic(err)
-		}
-		for i := range ordering.NumRuns() {
-			run := ordering.Run(i)
-			start, end := run.Pos() // NOTE: end is inclusive
-			dir := Direction(run.Direction())
-			for j := start; j <= end; j++ {
-				out = append(out, dir)
-			}
-		}
+		out = append(out, bidiLineDirections(line)...)
 		out = append(out, LTR) // FIXME the dir for the newline character ..
 	}
 

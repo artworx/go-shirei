@@ -308,3 +308,15 @@ func TestLargeSameWidthEditReshapesOneSegment(t *testing.T) {
 		t.Fatalf("line count changed from %d to %d", len(initial.Lines), len(shaped.Lines))
 	}
 }
+
+func TestBidiLineDirectionsReuseCachedSlice(t *testing.T) {
+	line := "abc אבג"
+	first := bidiLineDirections(line)
+	second := bidiLineDirections(line)
+	if len(first) == 0 || len(second) == 0 {
+		t.Fatal("bidi line produced no directions")
+	}
+	if &first[0] != &second[0] {
+		t.Fatal("repeated bidi line did not reuse the cached direction slice")
+	}
+}
