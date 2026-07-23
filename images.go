@@ -209,6 +209,8 @@ type ImageData struct {
 
 func nextImageGeneration() uint64 { return res.imageGenerationCounter.Add(1) }
 
+var readImageFileContent = os.ReadFile
+
 func LoadImageConfig(fpath string) image.Config {
 	const key = "image-config"
 	cfg, found := _getFileCacheContent[image.Config](fpath, key)
@@ -242,13 +244,16 @@ func LoadImage(fpath string) *ImageData {
 	}
 
 	img := new(ImageData)
-	content := ReadFileContent(fpath)
-
-	// read just the header
-	img.Config, _, _ = image.DecodeConfig(bytes.NewReader(content))
-
 	const threshold = 500 * 1024
-	if len(content) < threshold {
+	info, statErr := os.Stat(fpath)
+	if statErr != nil {
+		_setFileCacheContent(fpath, cacheType, img)
+		putImage(fpath, img)
+		return img
+	}
+	if info.Size() < threshold {
+		content := ReadFileContent(fpath)
+		img.Config, _, _ = image.DecodeConfig(bytes.NewReader(content))
 		// small enough size; load immediately
 		decoded, _, _ := image.Decode(bytes.NewReader(content))
 		rgba := imageToRGBA(decoded)
@@ -257,8 +262,17 @@ func LoadImage(fpath string) *ImageData {
 			img.Generation = nextImageGeneration()
 		}
 	} else {
-		// defer loading to background
+		// Read only the header on the frame thread. Large reads and decodes
+		// happen in the background so image previews cannot stall a frame.
+		if file, err := os.Open(fpath); err == nil {
+			img.Config, _, _ = image.DecodeConfig(file)
+			_ = file.Close()
+		}
 		go func() {
+			content, err := readImageFileContent(fpath)
+			if err != nil {
+				return
+			}
 			decoded, _, _ := image.Decode(bytes.NewReader(content))
 			rgba := imageToRGBA(decoded)
 			if rgba != nil {
