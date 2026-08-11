@@ -34,6 +34,7 @@ type Resources struct {
 	// The key does not include epoch. Named-family 0→id is this epoch,
 	// not hashed FontIds — the unwrapped key hashes intern ids.
 	fontLookupEpoch uint64
+	closestFaceMap map[FaceLookupKey]FontId
 
 	// Text shaping. unwrappedCache is HarfBuzz output (no wrap width).
 	// shapeCache is wrapped lines keyed by unwrapped key + quantized width.
@@ -102,6 +103,7 @@ func NewResources() *Resources {
 		bidiLineCache: lru.New[string, []Direction](lru.WithCapacity(65536)),
 		faces:               make([]FontFace, 1),
 		faceMap:             make(map[FaceLookupKey]FontId),
+		closestFaceMap:      make(map[FaceLookupKey]FontId),
 		hbfonts:             make(map[FontId]*harfbuzz.Font),
 		unwrappedCache:      lru.New[uint64, unwrappedShaped](lru.WithCapacity(shapeCacheCap)),
 		shapeCache:          lru.New[uint64, ShapedText](lru.WithCapacity(shapeCacheCap)),

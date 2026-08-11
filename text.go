@@ -487,7 +487,7 @@ func (f *internedFamilies) resolve(aspect FontAspect) (ids []FontId, primary Fon
 	}
 	ids = make([]FontId, len(f.names))
 	for i, name := range f.names {
-		ids[i] = LookupFace(FaceLookupKey{name, aspect})
+		ids[i] = LookupClosestFace(FaceLookupKey{name, aspect})
 	}
 	// Primary is a face on THIS list that covers space. Do not call
 	// FallbackFontFor here: fallbackScan resolves interned lists, and
