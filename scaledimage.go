@@ -158,7 +158,9 @@ func sourceImageOpaque(id ImageId, src *image.RGBA, base uintptr) bool {
 		op.rect == src.Rect && op.stride == src.Stride {
 		return op.opaque
 	}
-	opaque := src.Opaque()
+	data := LookupImage(id)
+	opaque := data != nil && data.Opaque
+	if !opaque { opaque = src.Opaque() }
 	res.imageOpacityById[id] = imageOpacity{
 		srcBase: base,
 		srcLen:  len(src.Pix),
