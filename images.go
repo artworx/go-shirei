@@ -193,6 +193,10 @@ func DebugGetImageCacheStats() ImageCacheStats {
 type ImageData struct {
 	image.Config
 	image.RGBA
+	// Opaque lets the software renderer bypass per-pixel alpha inspection and
+	// use its architecture-specific RGBA-to-BGRA row swizzle. Callers must only
+	// set it when every source pixel has alpha 255.
+	Opaque bool
 	// Generation is bumped whenever the RGBA pixels behind this id are established
 	// or replaced (async decode completion, UseImage replacement). The region
 	// raster cache folds (ImageId, Generation) into its content hash, so a change
@@ -333,11 +337,23 @@ func rgbaSameBacking(a, b *image.RGBA) bool {
 // key with the same backing store only touches lastUsed (cheap; preferred
 // every frame while visible). Call under the frame lock.
 func UseImage(key string, rgba *image.RGBA) ImageId {
+	return useImage(key, rgba, false)
+}
+
+// UseOpaqueImage is UseImage for a caller-known fully opaque raster. The
+// promise enables a SIMD paint path in software backends without rescanning the
+// same generated image every frame.
+func UseOpaqueImage(key string, rgba *image.RGBA) ImageId {
+	return useImage(key, rgba, true)
+}
+
+func useImage(key string, rgba *image.RGBA, opaque bool) ImageId {
 	if rgba == nil {
 		return 0
 	}
 	if id := res.imageKeys[key]; id != 0 {
 		if cur := res.imageIds[id]; cur != nil && rgbaSameBacking(&cur.RGBA, rgba) {
+			cur.Opaque = cur.Opaque || opaque
 			touchImage(id)
 			return id
 		}
@@ -345,6 +361,7 @@ func UseImage(key string, rgba *image.RGBA) ImageId {
 	data := &ImageData{
 		Config:     image.Config{Width: rgba.Bounds().Dx(), Height: rgba.Bounds().Dy()},
 		RGBA:       *rgba,
+		Opaque:     opaque,
 		Generation: nextImageGeneration(),
 	}
 	return putImage(key, data)

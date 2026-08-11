@@ -707,7 +707,11 @@ func (r *SoftRenderer) drawImage(s *Surface) {
 	// Always go through scaledImage so the result is in Host.PixelOrder
 	// (even at 1:1 size — source image.RGBA is package R,G,B,A).
 	scaled := scaledImage(s.ImageId, src, dw, dh)
-	r.blitPremul(dest, scaled.img, scaled.opaque)
+	if scaled.opaque {
+		r.blitOpaque(dest, scaled.img)
+	} else {
+		r.blitPremul(dest, scaled.img, false)
+	}
 }
 
 // -----------------------------------------------------------------------------
@@ -1114,6 +1118,73 @@ func (r *SoftRenderer) blitPremul(dest image.Rectangle, src *image.RGBA, opaque 
 			sp += 4
 			i += 4
 		}
+	}
+}
+
+// blitOpaque copies opaque pixels already in destination channel order. Only
+// rows intersecting rounded clip corners need scalar coverage blending.
+func (r *SoftRenderer) blitOpaque(dest image.Rectangle, src *image.RGBA) {
+	area := dest.Intersect(r.clip.rect)
+	if area.Empty() {
+		return
+	}
+	if r.galpha() != 255 || r.clip.mask != nil && (r.clip.corners == nil || !r.clip.corners.cornerOnly) {
+		r.blitPremul(dest, src, true)
+		return
+	}
+
+	sb := src.Bounds().Min
+	cr := r.clip.rect
+	clipWidth := cr.Dx()
+	for y := area.Min.Y; y < area.Max.Y; y++ {
+		maskedMin, maskedMax := area.Max.X, area.Min.X
+		if r.clip.mask != nil {
+			for _, square := range r.clip.corners.squares {
+				if y < square.Min.Y || y >= square.Max.Y {
+					continue
+				}
+				maskedMin = min(maskedMin, max(area.Min.X, square.Min.X))
+				maskedMax = max(maskedMax, min(area.Max.X, square.Max.X))
+			}
+		}
+
+		copyRun := func(x0, x1 int) {
+			if x1 <= x0 {
+				return
+			}
+			di := y*r.fb.Stride + x0*4
+			sp := src.PixOffset(sb.X+x0-dest.Min.X, sb.Y+y-dest.Min.Y)
+			copy(r.fb.Pix[di:di+(x1-x0)*4], src.Pix[sp:sp+(x1-x0)*4])
+		}
+		if maskedMax <= maskedMin {
+			copyRun(area.Min.X, area.Max.X)
+			continue
+		}
+		copyRun(area.Min.X, maskedMin)
+		di := y*r.fb.Stride + maskedMin*4
+		sp := src.PixOffset(sb.X+maskedMin-dest.Min.X, sb.Y+y-dest.Min.Y)
+		ci := (y-cr.Min.Y)*clipWidth + (maskedMin - cr.Min.X)
+		for x := maskedMin; x < maskedMax; x++ {
+			coverage := uint32(r.clip.mask[ci])
+			if coverage == 255 {
+				r.fb.Pix[di] = src.Pix[sp]
+				r.fb.Pix[di+1] = src.Pix[sp+1]
+				r.fb.Pix[di+2] = src.Pix[sp+2]
+				r.fb.Pix[di+3] = 255
+			} else if coverage != 0 {
+				blendPixel(
+					r.fb.Pix[di:di+4:di+4],
+					uint32(src.Pix[sp])*coverage/255,
+					uint32(src.Pix[sp+1])*coverage/255,
+					uint32(src.Pix[sp+2])*coverage/255,
+					coverage,
+				)
+			}
+			ci++
+			sp += 4
+			di += 4
+		}
+		copyRun(maskedMax, area.Max.X)
 	}
 }
 
