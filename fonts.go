@@ -462,6 +462,127 @@ func LookupFace(key FaceLookupKey) FontId {
 	return fid
 }
 
+// LookupClosestFace returns the closest available face in a family using the
+// CSS matching order: stretch, style, then weight.
+func LookupClosestFace(key FaceLookupKey) FontId {
+	if exact := LookupFace(key); exact != 0 {
+		return exact
+	}
+
+	key.Aspect.SetDefaults()
+	key.Family = strings.ToLower(key.Family)
+	faceRegistryMu.Lock()
+	defer faceRegistryMu.Unlock()
+	if cached, ok := res.closestFaceMap[key]; ok {
+		return cached
+	}
+	candidates := make([]FontId, 0, 4)
+	for id := FontId(1); int(id) < len(res.faces); id++ {
+		if strings.EqualFold(res.faces[id].Family, key.Family) {
+			candidates = append(candidates, id)
+		}
+	}
+	if len(candidates) == 0 {
+		res.closestFaceMap[key] = 0
+		return 0
+	}
+
+	stretch := closestStretch(candidates, key.Aspect.Stretch)
+	candidates = filterFaces(candidates, func(aspect FontAspect) bool { return aspect.Stretch == stretch })
+	style := closestStyle(candidates, key.Aspect.Style)
+	candidates = filterFaces(candidates, func(aspect FontAspect) bool { return aspect.Style == style })
+	weight := closestWeight(candidates, key.Aspect.Weight)
+	for _, id := range candidates {
+		if res.faces[id].Aspect.Weight == weight {
+			res.closestFaceMap[key] = id
+			return id
+		}
+	}
+	res.closestFaceMap[key] = candidates[0]
+	return candidates[0]
+}
+
+func filterFaces(candidates []FontId, keep func(FontAspect) bool) []FontId {
+	filtered := candidates[:0]
+	for _, id := range candidates {
+		if keep(res.faces[id].Aspect) {
+			filtered = append(filtered, id)
+		}
+	}
+	return filtered
+}
+
+func closestStretch(candidates []FontId, query Stretch) Stretch {
+	var narrower, wider Stretch
+	for _, id := range candidates {
+		stretch := res.faces[id].Aspect.Stretch
+		switch {
+		case stretch == query:
+			return query
+		case stretch > query && (wider == 0 || stretch-query < wider-query):
+			wider = stretch
+		case stretch < query && (narrower == 0 || query-stretch < query-narrower):
+			narrower = stretch
+		}
+	}
+	if query <= StretchNormal {
+		if narrower != 0 {
+			return narrower
+		}
+		return wider
+	}
+	if wider != 0 {
+		return wider
+	}
+	return narrower
+}
+
+func closestStyle(candidates []FontId, query Style) Style {
+	for _, id := range candidates {
+		if res.faces[id].Aspect.Style == query {
+			return query
+		}
+	}
+	if query == StyleItalic {
+		return StyleNormal
+	}
+	return StyleItalic
+}
+
+func closestWeight(candidates []FontId, query Weight) Weight {
+	var heavier, lighter Weight
+	for _, id := range candidates {
+		weight := res.faces[id].Aspect.Weight
+		switch {
+		case weight == query:
+			return query
+		case weight > query && (heavier == 0 || weight-query < heavier-query):
+			heavier = weight
+		case weight < query && (lighter == 0 || query-weight < query-lighter):
+			lighter = weight
+		}
+	}
+	if query >= WeightNormal && query <= WeightMedium {
+		if heavier != 0 && heavier <= WeightMedium {
+			return heavier
+		}
+		if lighter != 0 {
+			return lighter
+		}
+		return heavier
+	}
+	if query < WeightNormal {
+		if lighter != 0 {
+			return lighter
+		}
+		return heavier
+	}
+	if heavier != 0 {
+		return heavier
+	}
+	return lighter
+}
+
 func LookupGlyph(fontId FontId, ch rune) GlyphId {
 	if fontId == 0 {
 		return 0
@@ -756,6 +877,7 @@ func _nextFaceLocked() *FontFace {
 func _mapFaceLocked(key FaceLookupKey, fid FontId) {
 	key.Family = strings.ToLower(key.Family)
 	res.faceMap[key] = fid
+	clear(res.closestFaceMap)
 }
 
 // describedFace is one face header loaded off-lock before a batch publish.
