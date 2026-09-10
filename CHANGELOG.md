@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.6.10 - 2026-09-11
+
+Nested modules require `go.hasen.dev/shirei v0.6.10`.
+`examples/process_monitor` requires `procinfo v0.2.0`.
+
 ## v0.6.9 - 2026-09-10
 
 Nested modules (`ext/window`, `ext/darkmode`, `ext/camera`, examples,

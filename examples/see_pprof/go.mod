@@ -6,7 +6,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/google/pprof v0.0.0-20260709232956-b9395ee17fa0
-	go.hasen.dev/shirei v0.6.9
+	go.hasen.dev/shirei v0.6.10
 )
 
 require (

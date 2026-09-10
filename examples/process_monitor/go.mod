@@ -3,8 +3,8 @@ module go.hasen.dev/shirei/examples/process_monitor
 go 1.24.4
 
 require (
-	go.hasen.dev/procinfo v0.1.0
-	go.hasen.dev/shirei v0.6.9
+	go.hasen.dev/procinfo v0.2.0
+	go.hasen.dev/shirei v0.6.10
 )
 
 require (
