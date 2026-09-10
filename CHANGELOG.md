@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.6.9 - 2026-09-10
+
+Nested modules (`ext/window`, `ext/darkmode`, `ext/camera`, examples,
+and demos that have their own `go.mod`) require `go.hasen.dev/shirei
+v0.6.9`.
+
 ## v0.6.8 - 2026-09-10
 
 * GPU rendering by default on all platform backends, except X11.

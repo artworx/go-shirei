@@ -2,7 +2,7 @@ module go.hasen.dev/shirei/ext/camera
 
 go 1.24.4
 
-require go.hasen.dev/shirei v0.6.7
+require go.hasen.dev/shirei v0.6.9
 
 require (
 	github.com/anthonynsimon/bild v0.14.0 // indirect
