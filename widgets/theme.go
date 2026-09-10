@@ -27,6 +27,9 @@ var DefaultAccent = AccentBlue
 
 var ButtonAccent = AccentLightSteel
 
+// FocusRing is the outline color for the focused control (2px border).
+var FocusRing = Vec4{210, 85, 52, 1}
+
 // DefaultBackground is a light surface color for floating elements (menus,
 // popup panels): a clean off-white with a faint cool cast — bright enough to
 // read as a raised surface, but not stark white and not a flat "Windows 98"

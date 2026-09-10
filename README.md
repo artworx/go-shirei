@@ -79,12 +79,13 @@ phones.
 We also ship [`shirei_bundle`](cmd/shirei_bundle/README.md) to manage creating release
 bundles for all supported target platforms.
 
-Cross compilation works for most platforms without CGO. The exception is macOS and iOS.
+Cross compilation works for desktop platforms without CGO, including macOS.
+iOS still requires cgo.
 
 ## Motivation
 
 There are several approaches to creating UIs, and it has been this author's consistent
-experience that the declarative (immediate mode) provides the most flexibility and power
+experience that immediate mode provides the most flexibility and power
 for the least effort, compared to other approaches.
 
 When we say "immediate mode", we're not talking about the rendering mechanism, rather we are
@@ -119,13 +120,22 @@ Shirei supports complex text shaping and bidirectional layout, input method edit
 East Asian languages, and ability to use all system fonts.
 
 * Snapshot testing: render the normal application frame to an image without opening a native
-window or requiring a GPU.
+window or requiring a GPU. Headless snapshots always use the software renderer.
+
+* GPU compositor by default on macOS (Metal), iOS (Metal), Wayland (GLES), Android (GLES),
+Windows (D3D11), and web (WebGL2). X11 stays software. `SHIREI_GPU=0` or init failure
+falls back to the software renderer.
+
+* Access attributes on containers (`NextAccessName`, `AssignAccess`) build a
+queryable tree each frame. Drive tests launch the app and click by name over
+loopback UDP: [docs/drive-tutorial.md](docs/drive-tutorial.md). Command list:
+[docs/drive.md](docs/drive.md).
 
 ## Limitations
 
 * Shirei apps only have one window with standard decorations
 * Accessibility support not available yet, but planned before v1.0
-* No GPU surfaces at this time; under consideration
+* No app-owned GPU surfaces (video, custom 3D); under consideration
 
 ## Getting started
 

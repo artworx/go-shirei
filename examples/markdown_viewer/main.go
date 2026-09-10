@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io/fs"
 	"os"
@@ -52,42 +53,16 @@ var (
 )
 
 func main() {
-	pngPath := ""
-	fileArg := ""
-	args := os.Args[1:]
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--png":
-			if i+1 >= len(args) {
-				fmt.Fprintln(os.Stderr, "--png requires an output path")
-				os.Exit(2)
-			}
-			pngPath = args[i+1]
-			i++
-		case "--width":
-			if i+1 >= len(args) {
-				fmt.Fprintln(os.Stderr, "--width requires a pixel size")
-				os.Exit(2)
-			}
-			var w int
-			if _, err := fmt.Sscanf(args[i+1], "%d", &w); err != nil || w < 200 {
-				fmt.Fprintf(os.Stderr, "invalid --width %s\n", args[i+1])
-				os.Exit(2)
-			}
-			winW = w
-			i++
-		default:
-			if len(args[i]) > 0 && args[i][0] == '-' {
-				fmt.Fprintf(os.Stderr, "unknown flag %s\n", args[i])
-				os.Exit(2)
-			}
-			if fileArg == "" {
-				fileArg = args[i]
-			}
-		}
+	pngPath := flag.String("png", "", "write one settled frame to PATH and exit")
+	flag.IntVar(&winW, "width", defaultWinW, "window width in pixels")
+	flag.Parse()
+	if winW < 200 {
+		fmt.Fprintln(os.Stderr, "width must be at least 200")
+		os.Exit(2)
 	}
+	fileArg := flag.Arg(0)
 
-	if pngPath != "" {
+	if *pngPath != "" {
 		path := fileArg
 		if path == "" {
 			path = filepath.Join("testdata", "showcase.md")
@@ -96,7 +71,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		if err := RenderToPNG(pngPath, winW, winH, RootView); err != nil {
+		if err := RenderToPNG(*pngPath, winW, winH, RootView); err != nil {
 			fmt.Fprintln(os.Stderr, "render to png failed:", err)
 			os.Exit(1)
 		}
@@ -184,6 +159,7 @@ func RootView() {
 			}
 		})
 		ProfileButton("markdown_viewer")
+		FPSCounter()
 	})
 }
 

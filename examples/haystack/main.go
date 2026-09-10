@@ -9,11 +9,13 @@
 // Usage:
 //
 //	haystack                       open the GUI on the current directory
-//	haystack --png out.png [query] render one headless frame (optionally
-//	                               after running `query` to completion)
+//	haystack -png out.png          render one headless frame
+//	haystack -gitignore -query func [path]
+//	                               open the GUI and start that search
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 
@@ -32,10 +34,17 @@ func main() {
 	appData.pathInput = cwd
 	appData.editors = detectEditors()
 
-	if len(os.Args) >= 3 && os.Args[1] == "--png" {
-		if len(os.Args) >= 4 {
-			appData.query = os.Args[3]
-		}
+	png := flag.String("png", "", "write one settled frame to PATH and exit")
+	gitignore := flag.Bool("gitignore", false, "honor .gitignore")
+	query := flag.String("query", "", "start this search")
+	flag.Parse()
+	if flag.NArg() > 0 {
+		appData.pathInput = flag.Arg(0)
+	}
+	appData.gitignore = *gitignore
+	appData.query = *query
+
+	if *png != "" {
 		if appData.query != "" {
 			// Run to completion synchronously so the frame has results, and
 			// open it as the active tab.
@@ -43,11 +52,15 @@ func main() {
 			appData.searches = []*Search{s}
 			appData.active = s
 		}
-		if err := RenderToPNG(os.Args[2], winW, winH, RootView); err != nil {
+		if err := RenderToPNG(*png, winW, winH, RootView); err != nil {
 			fmt.Fprintln(os.Stderr, "render to png failed:", err)
 			os.Exit(1)
 		}
 		return
+	}
+
+	if appData.query != "" {
+		runNewSearch(currentParams())
 	}
 
 	app.SetupWindow("haystack", winW, winH)

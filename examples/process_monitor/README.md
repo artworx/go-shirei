@@ -1,20 +1,29 @@
 # process_monitor
 
-A small task manager: live process list, filter, tree or flat table, and
-per-process CPU/RAM history.
+A small task manager: live process list, filter, tree or flat table, host
+CPU/memory, and per-process CPU/RAM history.
 
 ![process_monitor](process_monitor.webp)
 
 ## Live process list and history charts
 
 Shows processes for the current machine with columns for PID, CPU, RSS, memory
-share, user, state, threads, and name. Click a column header to sort (again to
-reverse). Select a row for detail and ~60s rolling CPU/RAM charts.
+share, uptime, power (when the OS can measure it), user, state, threads, and
+name (with the program icon when the OS provides one). Click a column header to sort
+(again to reverse). Select a row for a lower-half details panel (executable, working
+directory, ~60s CPU/RAM/energy charts); click it again (or
+Deselect) to close the panel.
 
-- Filter by name, command line, user, or PID
+- Find/filter (⌘F / Ctrl+F, or the Find button): name, command line, user, or PID. Esc or × closes the bar
+- Pin a process (icon on the name, or Pin in the details panel) to keep it
+  at the top of the sort — including among tree siblings — and after it exits
+- Kill the selected process (confirm the second click); permission errors
+  surface as a toast
 - Flat list or parent/child tree (collapse with ▸/▾; filter keeps ancestors)
-- Sample interval 0.5s / 1s / 2s / 5s
-- Metrics that could not be read show `--`, not a fake zero
+- Sample interval 1s / 2s / 5s / 10s
+- Metrics that could not be read show `--`, not a fake zero (power is
+  best-effort: macOS task energy, Linux RAPL share when readable)
+- Exited processes stay for ~10s (and while selected) and render faded as "exited"
 - Same UI on macOS, Linux, and Windows (`procinfo` collectors underneath)
 
 There is also a headless terminal mode (`-once`) that prints a sorted report

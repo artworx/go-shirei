@@ -9,8 +9,8 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	"os"
 	"strings"
 
 	app "go.hasen.dev/shirei/app"
@@ -76,8 +76,10 @@ func visibleIcons() []*NamedIcon {
 func main() {
 	// `icons --png out.png` renders one settled frame and exits — the
 	// headless feedback loop (tutorial §3).
-	if len(os.Args) >= 3 && os.Args[1] == "--png" {
-		if err := RenderToPNG(os.Args[2], 1080, 720, RootView); err != nil {
+	png := flag.String("png", "", "write one settled frame to PATH and exit")
+	flag.Parse()
+	if *png != "" {
+		if err := RenderToPNG(*png, 1080, 720, RootView); err != nil {
 			fmt.Println("render to png failed:", err)
 		}
 		return

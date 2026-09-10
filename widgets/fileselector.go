@@ -134,44 +134,49 @@ func FileSelector(attrs FileSelectorAttrs) bool {
 		accepted = true
 	}
 
-	qAttrs := DefaultTextInputAttrs()
-	qAttrs.FontSize = 14
-	qAttrs.MinWidth = attrs.Width
-	qAttrs.NoUpDownLineEdges = true
-	TextInputExt(query, qAttrs)
+	Container(Attrs(), func() {
+		NextAccessRole("group")
+		AssignAccess()
 
-	limit := min(len(results), attrs.MaxResults)
-	switch GetFrameInput().Key {
-	case KeyDown:
-		if st.selected+1 < limit {
-			st.selected++
-			VirtualListScrollIntoView(st, results[st.selected])
-		}
-	case KeyUp:
-		if st.selected > 0 {
-			st.selected--
-			VirtualListScrollIntoView(st, results[st.selected])
-		}
-	case KeyEnter:
-		if limit > 0 {
-			accept(results[st.selected])
-		}
-	}
+		qAttrs := DefaultTextInputAttrs()
+		qAttrs.FontSize = 14
+		qAttrs.MinWidth = attrs.Width
+		qAttrs.NoUpDownLineEdges = true
+		TextInputExt(query, qAttrs)
 
-	if attrs.Hint != nil {
-		if h := attrs.Hint(len(results)); h != "" {
-			Label(h, FontSize(10), TextColor(0, 0, 55, 1))
+		limit := min(len(results), attrs.MaxResults)
+		switch GetFrameInput().Key {
+		case KeyDown:
+			if st.selected+1 < limit {
+				st.selected++
+				VirtualListScrollIntoView(st, results[st.selected])
+			}
+		case KeyUp:
+			if st.selected > 0 {
+				st.selected--
+				VirtualListScrollIntoView(st, results[st.selected])
+			}
+		case KeyEnter:
+			if limit > 0 {
+				accept(results[st.selected])
+			}
 		}
-	}
 
-	Container(Attrs(Expand, FixHeight(f32(attrs.MaxRows)*fileSelectorRowH), Clip, Background(220, 8, 98, 1), Corners(4)), func() {
-		VirtualListView(st, limit,
-			func(i int) any { return results[i] },
-			func(i int, _ f32) f32 { return fileSelectorRowH },
-			func(i int, _ f32) {
-				fileSelectorRow(st, i, results[i], attrs.Root, accept)
-			},
-		)
+		if attrs.Hint != nil {
+			if h := attrs.Hint(len(results)); h != "" {
+				Label(h, FontSize(10), TextColor(0, 0, 55, 1))
+			}
+		}
+
+		Container(Attrs(Expand, FixHeight(f32(attrs.MaxRows)*fileSelectorRowH), Clip, Background(220, 8, 98, 1), Corners(4)), func() {
+			VirtualListView(st, limit,
+				func(i int) any { return results[i] },
+				func(i int, _ f32) f32 { return fileSelectorRowH },
+				func(i int, _ f32) {
+					fileSelectorRow(st, i, results[i], attrs.Root, accept)
+				},
+			)
+		})
 	})
 
 	return accepted

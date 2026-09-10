@@ -25,22 +25,6 @@ import (
 	. "go.hasen.dev/shirei"
 )
 
-// SegmentedCell is one option in a SegmentedControl.
-type SegmentedCell[T comparable] struct {
-	Label string
-	Value T
-}
-
-// Cell makes a SegmentedCell. A composite literal would need its type
-// argument spelled out explicitly (SegmentedCell[Voice]{"Oud", VoiceOud}) —
-// Go only infers generic type arguments through a function call, not a bare
-// literal — so this constructor exists to let T be inferred from value:
-//
-//	SegmentedControl(&app.voice, Cell("Oud", VoiceOud), Cell("Flute", VoiceFlute))
-func Cell[T comparable](label string, value T) SegmentedCell[T] {
-	return SegmentedCell[T]{Label: label, Value: value}
-}
-
 // SegmentState is one cell's interaction snapshot for a segmented control.
 // Call ProcessSegmentEvents inside that cell's Container (once per cell per
 // frame). The function binds to the current container id.
@@ -63,6 +47,7 @@ type SegmentState[T comparable] struct {
 	Clicked  bool // completed press on this cell this frame
 	Selected bool // *target == value after this call
 	Disabled bool
+	HasFocus bool
 	// Local is the pointer relative to this cell's screen top-left.
 	Local Vec2
 
@@ -77,15 +62,16 @@ type SegmentState[T comparable] struct {
 	SelectedAt time.Time
 }
 
-// ProcessSegmentEvents analyzes pointer interaction on the current container
-// as one segment of a mutually-exclusive group bound to *target. On a
-// completed click that chooses value, it writes *target and returns
-// BecameSelected with Prev set to the prior value.
+// ProcessSegmentEvents analyzes pointer and keyboard interaction on the
+// current container as one segment of a mutually-exclusive group bound to
+// *target. On a completed click (or Space/Enter while focused) that chooses
+// value, it writes *target and returns BecameSelected with Prev set to the
+// prior value.
 //
-// Pointer model matches ProcessButtonEvents (touch latch + mouse, ignore
-// MouseFromTouch). Call once per cell, inside that cell's container body.
-// Default SegmentedControl and custom skins (e.g. demos/custom-segmented)
-// share this.
+// Pointer model matches ProcessButtonEvents. Call once per cell, inside that
+// cell's container body. Arrow-key movement across the group is the stock
+// SegmentedControl's job — custom skins that want it handle Left/Right on
+// the frame after the cells build.
 func ProcessSegmentEvents[T comparable](target *T, value T, disabled bool) SegmentState[T] {
 	var st SegmentState[T]
 	bst := ProcessButtonEvents(disabled)
@@ -93,6 +79,7 @@ func ProcessSegmentEvents[T comparable](target *T, value T, disabled bool) Segme
 	st.Hovered = bst.Hovered
 	st.Active = bst.Active
 	st.Clicked = bst.Clicked
+	st.HasFocus = bst.HasFocus
 	st.Local = bst.Local
 
 	type hook struct {
@@ -156,14 +143,22 @@ func DefaultSegmentedControlAttrs() SegmentedControlAttrs {
 // clicked one. Returns true when the selection changed this frame (handy
 // for reacting to the change, e.g. recomputing derived state). Values must
 // be unique — they double as the segments' identity.
-func SegmentedControl[T comparable](target *T, segments ...SegmentedCell[T]) bool {
-	return SegmentedControlExt(target, DefaultSegmentedControlAttrs(), segments...)
+//
+//	NextAccessName("voice")
+//	SegmentedControl(&voice, func() {
+//	    NextAccessName("oud")
+//	    SegmentedCell("Oud", VoiceOud)
+//	    NextAccessName("flute")
+//	    SegmentedCell("Flute", VoiceFlute)
+//	})
+func SegmentedControl[T comparable](target *T, body func()) bool {
+	return SegmentedControlExt(target, DefaultSegmentedControlAttrs(), body)
 }
 
 // SegmentedControlExt is SegmentedControl with per-instance accent and layout.
 // Prefer DefaultSegmentedControlAttrs() as a starting point when overriding
 // pad, corners, or Expand.
-func SegmentedControlExt[T comparable](target *T, attrs SegmentedControlAttrs, segments ...SegmentedCell[T]) bool {
+func SegmentedControlExt[T comparable](target *T, attrs SegmentedControlAttrs, body func()) bool {
 	accent := AccentOrFallback(attrs.Accent, DefaultAccent)
 	h := comfort(segmentHeight)
 	minW := comfort(attrs.MinCellWidth)
@@ -177,6 +172,21 @@ func SegmentedControlExt[T comparable](target *T, attrs SegmentedControlAttrs, s
 	labelSize := comfort(12)
 	changed := false
 
+	run := &segmentedRun[T]{
+		target:    target,
+		changed:   &changed,
+		accent:    accent,
+		h:         h,
+		minW:      minW,
+		padH:      padH,
+		endR:      endR,
+		labelSize: labelSize,
+		expand:    attrs.Expand,
+	}
+	prev := currentSegmented
+	currentSegmented = run
+	defer func() { currentSegmented = prev }()
+
 	frame := Attrs(Row, BorderWidth(segmentBorderWidth), BorderColor(accent[0], accent[1], accent[2], accent[3]), Clip)
 	if frameR > 0 {
 		frame = AttrsWith(frame, Corners(frameR))
@@ -186,36 +196,115 @@ func SegmentedControlExt[T comparable](target *T, attrs SegmentedControlAttrs, s
 	}
 
 	Container(frame, func() {
-		for i, s := range segments {
-			var rl, rr f32
-			if i == 0 {
-				rl = endR
+		NextAccessRole("radiogroup")
+		AssignAccess()
+
+		type hook struct {
+			ids    []ContainerId
+			values []T
+		}
+		hids := Use[hook]("seg-ids")
+		n := len(hids.ids)
+		if n > 0 && len(hids.values) == n {
+			idx := -1
+			for i, id := range hids.ids {
+				if IdHasFocus(id) {
+					idx = i
+					break
+				}
 			}
-			if i == len(segments)-1 {
-				rr = endR
-			}
-			if segmentOption(accent, target, s.Value, s.Label, rl, rr, h, minW, padH, labelSize, attrs.Expand) {
-				changed = true
-			}
-			if i < len(segments)-1 {
-				Element(Attrs(FixWidth(segmentBorderWidth), FixHeight(h), BackgroundVec(accent)))
+			if idx >= 0 {
+				delta := 0
+				switch GetFrameInput().Key {
+				case KeyLeft, KeyUp:
+					delta = -1
+				case KeyRight, KeyDown:
+					delta = 1
+				}
+				if delta != 0 {
+					next := idx + delta
+					if next < 0 {
+						next = n - 1
+					} else if next >= n {
+						next = 0
+					}
+					if next != idx {
+						*target = hids.values[next]
+						FocusImmediateOn(hids.ids[next])
+						changed = true
+						GetFrameInput().Key = KeyCodeNone
+						RequestNextFrame()
+					}
+				}
 			}
 		}
+		run.lastN = n
+		if body != nil {
+			body()
+		}
+		hids.ids = append(hids.ids[:0], run.nextIDs...)
+		hids.values = append(hids.values[:0], run.nextVals...)
 	})
 	return changed
 }
 
+var currentSegmented any
+
+type segmentedRun[T comparable] struct {
+	target                         *T
+	changed                        *bool
+	accent                         Vec4
+	h, minW, padH, endR, labelSize f32
+	expand                         bool
+	lastN                          int
+	index                          int
+	nextIDs                        []ContainerId
+	nextVals                       []T
+}
+
+// SegmentedCell paints one segment inside the current SegmentedControl body.
+// Other widgets in that body become extra row children and scramble dividers
+// and end radii.
+func SegmentedCell[T comparable](label string, value T) {
+	run, ok := currentSegmented.(*segmentedRun[T])
+	if !ok || run == nil || run.target == nil {
+		panic("widgets: SegmentedCell must be called from SegmentedControl")
+	}
+	if run.index > 0 {
+		Element(Attrs(FixWidth(segmentBorderWidth), FixHeight(run.h), BackgroundVec(run.accent)))
+	}
+	var rl, rr f32
+	if run.index == 0 {
+		rl = run.endR
+	}
+	if run.lastN > 0 && run.index == run.lastN-1 {
+		rr = run.endR
+	}
+	ch, id := segmentOption(run.accent, run.target, value, label, rl, rr, run.h, run.minW, run.padH, run.labelSize, run.expand)
+	if ch {
+		*run.changed = true
+	}
+	run.nextIDs = append(run.nextIDs, id)
+	run.nextVals = append(run.nextVals, value)
+	run.index++
+}
+
 // segmentOption is one segment; rl/rr round the outer corners of the end
-// segments so they follow the frame's radius. Returns true when this cell
-// became the selection this frame.
-func segmentOption[T comparable](accent Vec4, target *T, value T, label string, rl, rr, h, minW, padH, labelSize f32, expand bool) bool {
+// segments so they follow the frame's radius. Returns whether this cell
+// became the selection this frame, and the cell's identity.
+func segmentOption[T comparable](accent Vec4, target *T, value T, label string, rl, rr, h, minW, padH, labelSize f32, expand bool) (bool, ContainerId) {
 	changed := false
+	var id ContainerId
 	cell := Attrs(FixHeight(h), MinWidth(minW), CrossAlign(AlignMiddle), Pad2(0, padH), Corners4(rl, rr, rr, rl))
 	if expand {
 		cell = AttrsWith(cell, Grow(1))
 	}
 	ContainerWithKey(value, cell, func() {
+		id = CurrentId()
 		st := ProcessSegmentEvents(target, value, false)
+		NextAccessRole("radio")
+		NextAccessChecked(st.Selected)
+		AssignAccess()
 		changed = st.BecameSelected
 
 		bg := Vec4{0, 0, 100, 1}
@@ -235,10 +324,13 @@ func segmentOption[T comparable](accent Vec4, target *T, value T, label string, 
 			}
 		}
 		ModAttrs(BackgroundVec(bg), GradVec(grad))
+		if st.HasFocus {
+			ModAttrs(BorderWidth(2), BorderColorVec(FocusRing))
+		}
 
 		Filler(1)
 		Label(label, FontSize(labelSize), textClr, FontWeight(weight))
 		Filler(1)
 	})
-	return changed
+	return changed, id
 }

@@ -10,7 +10,7 @@ require (
 	github.com/dboslee/lru v0.0.1 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-text/typesetting v0.3.4 // indirect
-	go.hasen.dev/generic v0.1.7 // indirect
+	go.hasen.dev/generic v0.1.8 // indirect
 	golang.org/x/image v0.29.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.33.0 // indirect

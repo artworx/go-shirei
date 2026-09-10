@@ -7,3 +7,7 @@ require (
 	go.hasen.dev/shirei v0.6.7
 	go.hasen.dev/shirei/ext/darkmode v0.6.7
 )
+
+replace go.hasen.dev/shirei => ../..
+
+replace go.hasen.dev/shirei/ext/darkmode => ../../ext/darkmode

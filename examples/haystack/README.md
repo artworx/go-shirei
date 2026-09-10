@@ -82,7 +82,8 @@ mid-iteration (`TabBar` in `gui.go`).
 
 ```shell
 go run .                      # inside examples/haystack; searches cwd
-go run . --png out.png [q]    # optional query runs before the frame
+go run . -png out.png         # headless frame
+go run . -query q -png out.png
 ```
 
 Concepts in more depth: [tutorial.md](../../docs/tutorial.md).

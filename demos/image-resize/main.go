@@ -126,6 +126,7 @@ func rootView() {
 
 	resizeHUD()
 	ProfileButton("image-resize")
+	FPSCounter()
 }
 
 func resizeHUD() {
@@ -193,7 +194,7 @@ func runResizeBench() {
 		devW := int(float32(width)*host.WindowScale + 0.5)
 		devH := int(float32(*heightFlag)*host.WindowScale + 0.5)
 		t1 := time.Now()
-		renderer.Render(out.Surfaces, devW, devH, host.WindowScale)
+		renderer.Render(out.Surfaces, out.GlyphRuns, devW, devH, host.WindowScale)
 		return benchFrame{
 			produce: produce,
 			paint:   time.Since(t1),

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"math"
 	"os"
@@ -122,8 +123,10 @@ func main() {
 
 	// `see_pprof --png out.png` renders one settled frame (of the newest
 	// profile in the current directory) and exits — headless verification.
-	if len(os.Args) >= 3 && os.Args[1] == "--png" {
-		if err := RenderToPNG(os.Args[2], 1100, 700, RootView); err != nil {
+	png := flag.String("png", "", "write one settled frame to PATH and exit")
+	flag.Parse()
+	if *png != "" {
+		if err := RenderToPNG(*png, 1100, 700, RootView); err != nil {
 			fmt.Println("render to png failed:", err)
 		}
 		return
@@ -208,7 +211,7 @@ func inspectProfileFile(name string, modTime time.Time, size int64) ProfileFileI
 
 // startWatchingDir keeps the sidebar's file list live: whenever a .pprof
 // file is created, written, removed, or renamed in dir, it re-scans and
-// wakes the render loop, so a program using ProfileButton (DEBUG=1) shows up
+// wakes the render loop, so a program using ProfileButton (SHIREI_PPROF=1) shows up
 // here as soon as it commits its profile.
 func startWatchingDir(dir string) {
 	watcher, err := fsnotify.NewWatcher()
@@ -278,6 +281,7 @@ func selectFile(name string) {
 	}
 	appData.prof = p
 	computeStats(p)
+	restoreFileView()
 }
 
 // defaultValueIndex picks the sample-value axis to display, matching the
@@ -332,7 +336,7 @@ func computeStats(p *profile.Profile) {
 		// (locations are leaf-first; within a location, Line[0] is the
 		// innermost line, which matters when frames are inlined)
 		if leaf := s.Location[0]; len(leaf.Line) > 0 && leaf.Line[0].Function != nil {
-			getOrCreate(leaf.Line[0].Function.Name).Flat += val
+			getOrCreate(funcName(leaf.Line[0].Function, leaf)).Flat += val
 		}
 
 		// cumulative: every distinct function anywhere in the stack, once
@@ -340,11 +344,15 @@ func computeStats(p *profile.Profile) {
 		clear(seen)
 		for _, loc := range s.Location {
 			for _, line := range loc.Line {
-				if line.Function == nil || seen[line.Function.Name] {
+				if line.Function == nil {
 					continue
 				}
-				seen[line.Function.Name] = true
-				getOrCreate(line.Function.Name).Cum += val
+				name := funcName(line.Function, loc)
+				if seen[name] {
+					continue
+				}
+				seen[name] = true
+				getOrCreate(name).Cum += val
 			}
 		}
 	}
@@ -390,7 +398,7 @@ func buildFlameTree(p *profile.Profile, valueIndex int) (*FlameNode, int) {
 			loc := s.Location[i]
 			for j := len(loc.Line) - 1; j >= 0; j-- {
 				if fn := loc.Line[j].Function; fn != nil {
-					stack = append(stack, fn.Name)
+					stack = append(stack, funcName(fn, loc))
 				}
 			}
 		}
@@ -398,6 +406,24 @@ func buildFlameTree(p *profile.Profile, valueIndex int) (*FlameNode, int) {
 		addFlameStack(root, stack, val)
 	}
 	return root, maxDepth
+}
+
+// funcName is the display name for a profile function. Name is preferred;
+// SystemName and the location address cover native/unsymbolized frames
+// that have a Function object but no Name.
+func funcName(fn *profile.Function, loc *profile.Location) string {
+	if fn != nil {
+		if fn.Name != "" {
+			return fn.Name
+		}
+		if fn.SystemName != "" {
+			return fn.SystemName
+		}
+	}
+	if loc != nil && loc.Address != 0 {
+		return fmt.Sprintf("%#x", loc.Address)
+	}
+	return "(unknown)"
 }
 
 func addFlameStack(root *FlameNode, stack []string, val int64) {
@@ -633,6 +659,7 @@ func fileStats(info ProfileFileInfo) string {
 
 func RootView() {
 	ProfileButton("see_pprof")
+	FPSCounter()
 
 	Container(Attrs(Row, Viewport), func() {
 		Sidebar()
@@ -718,49 +745,44 @@ func MainContent() {
 			return
 		}
 
-		// scoped by flameRoot so switching profiles resets zoom/pan/focus
-		ContainerWithKey(appData.flameRoot, Attrs(Grow(1), Expand, Clip), func() {
-			state := UseWithInit[FlameState]("flame-state", func() *FlameState {
-				return &FlameState{scale: 1}
-			})
+		state := fileView(appData.selected)
 
-			totalHeight := GetResolvedSize()[1]
-			topAttrs := Attrs(Grow(1), Expand, Clip)
-			bottomAttrs := Attrs(Grow(1), Expand, Clip)
-			if totalHeight > 0 {
-				available := totalHeight - splitterHeight
-				topHeight := available * mainSplitRatio
-				topAttrs = Attrs(FixHeight(topHeight), Expand, Clip)
-				bottomAttrs = Attrs(FixHeight(available-topHeight), Expand, Clip)
+		totalHeight := GetResolvedSize()[1]
+		topAttrs := Attrs(Grow(1), Expand, Clip)
+		bottomAttrs := Attrs(Grow(1), Expand, Clip)
+		if totalHeight > 0 {
+			available := totalHeight - splitterHeight
+			topHeight := available * mainSplitRatio
+			topAttrs = Attrs(FixHeight(topHeight), Expand, Clip)
+			bottomAttrs = Attrs(FixHeight(available-topHeight), Expand, Clip)
+		} else {
+			RequestNextFrame()
+		}
+
+		Container(topAttrs, func() {
+			stats, total := visibleStats(state)
+			ProfileHeader(state)
+			if state.peekFunc != "" {
+				PeekView(state, total)
 			} else {
-				RequestNextFrame()
+				filtered := filterStats(stats, searchTerm())
+				SearchBar(state, stats, filtered, total)
+				StatsTable(state, filtered, total)
 			}
+		})
 
-			Container(topAttrs, func() {
-				stats, total := visibleStats(state)
-				ProfileHeader(state)
-				if state.peekFunc != "" {
-					PeekView(state, total)
-				} else {
-					filtered := filterStats(stats, searchTerm())
-					SearchBar(state, stats, filtered, total)
-					StatsTable(state, filtered, total)
-				}
-			})
+		Container(Attrs(FixHeight(splitterHeight), Expand, Background(0, 0, 80, 1)), func() {
+			if IsHovered() {
+				ModAttrs(Background(210, 60, 60, 1))
+			}
+			PressAction()
+			if IsActive() && totalHeight > 0 {
+				mainSplitRatio = clampF32(mainSplitRatio+GetFrameInput().Motion[1]/(totalHeight-splitterHeight), 0.15, 0.85)
+			}
+		})
 
-			Container(Attrs(FixHeight(splitterHeight), Expand, Background(0, 0, 80, 1)), func() {
-				if IsHovered() {
-					ModAttrs(Background(210, 60, 60, 1))
-				}
-				PressAction()
-				if IsActive() && totalHeight > 0 {
-					mainSplitRatio = clampF32(mainSplitRatio+GetFrameInput().Motion[1]/(totalHeight-splitterHeight), 0.15, 0.85)
-				}
-			})
-
-			Container(bottomAttrs, func() {
-				FlameGraphSection(state)
-			})
+		Container(bottomAttrs, func() {
+			FlameGraphSection(state)
 		})
 	})
 }
@@ -825,33 +847,33 @@ func FuncNameCell(state *FlameState, name string) {
 	})
 }
 
-// statsColumns builds the column set fresh each frame since Render closures
+// statsColumns builds the column set fresh each frame since Cell closures
 // capture total/appData.sampleUnt, which vary with focus state.
 func statsColumns(state *FlameState, total int64) []TableColumn[*FuncStat] {
 	return []TableColumn[*FuncStat]{
 		{
 			Label:  "Function",
-			Render: func(s *FuncStat) { FuncNameCell(state, s.Name) },
+			Cell: func(s *FuncStat) { FuncNameCell(state, s.Name) },
 			Less:   func(a, b *FuncStat) bool { return a.Name < b.Name },
 		},
 		{
 			Label: "Flat", Width: colFlat, DefaultDesc: true,
-			Render: func(s *FuncStat) { Label(formatValue(s.Flat, appData.sampleUnt)) },
+			Cell: func(s *FuncStat) { Label(formatValue(s.Flat, appData.sampleUnt)) },
 			Less:   func(a, b *FuncStat) bool { return a.Flat < b.Flat },
 		},
 		{
 			Label: "Flat%", Width: colPct, DefaultDesc: true,
-			Render: func(s *FuncStat) { Label(formatPercent(s.Flat, total)) },
+			Cell: func(s *FuncStat) { Label(formatPercent(s.Flat, total)) },
 			Less:   func(a, b *FuncStat) bool { return a.Flat < b.Flat },
 		},
 		{
 			Label: "Cum", Width: colCum, DefaultDesc: true,
-			Render: func(s *FuncStat) { Label(formatValue(s.Cum, appData.sampleUnt)) },
+			Cell: func(s *FuncStat) { Label(formatValue(s.Cum, appData.sampleUnt)) },
 			Less:   func(a, b *FuncStat) bool { return a.Cum < b.Cum },
 		},
 		{
 			Label: "Cum%", Width: colPct, DefaultDesc: true,
-			Render: func(s *FuncStat) { Label(formatPercent(s.Cum, total)) },
+			Cell: func(s *FuncStat) { Label(formatPercent(s.Cum, total)) },
 			Less:   func(a, b *FuncStat) bool { return a.Cum < b.Cum },
 		},
 	}
@@ -929,7 +951,11 @@ func SearchBar(state *FlameState, all, filtered []*FuncStat, total int64) {
 }
 
 func StatsTable(state *FlameState, stats []*FuncStat, total int64) {
-	Table(nil, rowHeight, statsColumns(state, total), stats, func(s *FuncStat) any { return s }, statsColumnDefaultSort)
+	TableExt(nil, TableAttrs[*FuncStat]{
+		RowHeight:    rowHeight,
+		SortState:    &state.tableSort,
+		ScrollOffset: &state.tableScroll,
+	}, statsColumns(state, total), stats, func(s *FuncStat) any { return s })
 }
 
 // edgeColumns is the column set for both peek tables. Percentages are
@@ -942,7 +968,7 @@ func edgeColumns(state *FlameState, total int64) []TableColumn[*FuncEdge] {
 	return []TableColumn[*FuncEdge]{
 		{
 			Label: "Function",
-			Render: func(e *FuncEdge) {
+			Cell: func(e *FuncEdge) {
 				if strings.HasPrefix(e.Name, "(") {
 					Label(e.Name, FontStyle(StyleItalic))
 				} else {
@@ -958,12 +984,12 @@ func edgeColumns(state *FlameState, total int64) []TableColumn[*FuncEdge] {
 		},
 		{
 			Label: "Value", Width: colFlat, DefaultDesc: true,
-			Render: func(e *FuncEdge) { Label(formatValue(e.Value, appData.sampleUnt)) },
+			Cell: func(e *FuncEdge) { Label(formatValue(e.Value, appData.sampleUnt)) },
 			Less:   func(a, b *FuncEdge) bool { return a.Value < b.Value },
 		},
 		{
 			Label: "%", Width: colPct, DefaultDesc: true,
-			Render: func(e *FuncEdge) { Label(formatPercent(e.Value, total)) },
+			Cell: func(e *FuncEdge) { Label(formatPercent(e.Value, total)) },
 			Less:   func(a, b *FuncEdge) bool { return a.Value < b.Value },
 		},
 	}
@@ -1034,17 +1060,23 @@ func PeekView(state *FlameState, scopeTotal int64) {
 	peekSection("Callees — cost flowing out (incl. self)", state.peekCallees)
 }
 
-// FlameState is scroll/zoom-nav state for the flame graph: scale is how many
-// times wider the virtual (zoomed-in) canvas is than the panel; panX/panY
-// are the scroll offset into that virtual canvas, in pixels. focus is the
-// clicked subtree (nil = whole profile) driving the top list's scope;
-// focusStats/focusTotal are computed once when it's set, not per frame.
+// FlameState is the per-file view: flame pan/zoom, table sort and scroll,
+// selection, peek, and focus. Stored with UseData keyed by filename so switching
+// profiles and coming back restores it. focus is a pointer into the current
+// flame tree; focusPath is the same location as a name walk from the root,
+// which is what survives a re-parse.
 type FlameState struct {
+	inited bool
+
 	scale f32
 	panX  f32
 	panY  f32
 
+	tableSort   TableSortState
+	tableScroll f32
+
 	focus      *FlameNode
+	focusPath  []string
 	focusStats []*FuncStat
 	focusTotal int64
 
@@ -1092,13 +1124,89 @@ func clampF32(v, lo, hi f32) f32 {
 	return max(lo, min(v, hi))
 }
 
+func fileView(name string) *FlameState {
+	state := UseData[FlameState](name, "file-view")
+	if !state.inited {
+		state.scale = 1
+		state.tableSort.Column = statsColumnDefaultSort
+		state.tableSort.Desc = true // matches statsColumns[Flat].DefaultDesc
+		state.inited = true
+	}
+	return state
+}
+
+// restoreFileView applies the saved view to the tree just parsed into
+// appData. Pointers (focus, peek cache) are rebound or dropped; strings and
+// pan/zoom/sort are already in the UseData slot.
+func restoreFileView() {
+	state := fileView(appData.selected)
+	state.peekFor = ""
+	state.peekScope = nil
+	state.peekCallers = nil
+	state.peekCallees = nil
+	state.peekTotal = 0
+	if node := lookupFocusPath(appData.flameRoot, state.focusPath); node != nil {
+		setFocus(state, node)
+	} else {
+		clearFocus(state)
+	}
+}
+
+func lookupFocusPath(root *FlameNode, path []string) *FlameNode {
+	if root == nil || len(path) == 0 {
+		return nil
+	}
+	n := root
+	for _, name := range path {
+		var next *FlameNode
+		for _, c := range n.Children {
+			if c.Name == name {
+				next = c
+				break
+			}
+		}
+		if next == nil {
+			return nil
+		}
+		n = next
+	}
+	return n
+}
+
+func nodePath(root, target *FlameNode) []string {
+	if root == nil || target == nil || root == target {
+		return nil
+	}
+	var path []string
+	var walk func(*FlameNode) bool
+	walk = func(n *FlameNode) bool {
+		if n == target {
+			return true
+		}
+		for _, c := range n.Children {
+			path = append(path, c.Name)
+			if walk(c) {
+				return true
+			}
+			path = path[:len(path)-1]
+		}
+		return false
+	}
+	if !walk(root) {
+		return nil
+	}
+	return path
+}
+
 func setFocus(state *FlameState, node *FlameNode) {
 	state.focus = node
+	state.focusPath = nodePath(appData.flameRoot, node)
 	state.focusStats, state.focusTotal = computeFocusedStats(node)
 }
 
 func clearFocus(state *FlameState) {
 	state.focus = nil
+	state.focusPath = nil
 	state.focusStats = nil
 	state.focusTotal = 0
 }
@@ -1176,7 +1284,7 @@ func FlameGraph(state *FlameState) {
 			dy := GetFrameInput().Scroll[1]
 			dx := GetFrameInput().Scroll[0]
 			// Trackpad pinch reaches us as a scroll event with Ctrl held (see
-			// the comment on cocoa_darwin.m's scrollWheel:); holding Ctrl and
+			// the comment on cocoa_appkit_darwin.go's scrollWheel:); holding Ctrl and
 			// scrolling manually works the same way as a fallback.
 			if GetInputState().Modifiers&ModCtrl != 0 {
 				if dy != 0 {
@@ -1334,10 +1442,17 @@ func flameTooltip(node *FlameNode, panelWidth, panelHeight f32) {
 		formatValue(node.Value, appData.sampleUnt),
 		formatPercent(node.Value, appData.total))
 
-	nameLine := ShapeText(node.Name, nameAttrs).Lines[0]
-	valueShaped := ShapeText(valueLine, valueAttrs).Lines[0]
-	w := max(nameLine.Width, valueShaped.Width) + padH*2
-	h := nameLine.Height + valueShaped.Height + padV*2 + gap
+	measure := func(text string, style TextStyleAttrs) (w, h f32) {
+		lines := ShapeText(text, style).Lines
+		if len(lines) == 0 {
+			return 0, style.FontSize
+		}
+		return lines[0].Width, lines[0].Height
+	}
+	nameW, nameH := measure(node.Name, nameAttrs)
+	valueW, valueH := measure(valueLine, valueAttrs)
+	w := max(nameW, valueW) + padH*2
+	h := nameH + valueH + padV*2 + gap
 
 	rd := GetRenderData()
 	mouseX := GetInputState().MousePoint[0] - rd.ResolvedOrigin[0]

@@ -17,8 +17,12 @@ require (
 	github.com/go-text/typesetting v0.3.4 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/jezek/xgb v1.1.1 // indirect
-	go.hasen.dev/generic v0.1.7 // indirect
+	go.hasen.dev/generic v0.1.8 // indirect
 	golang.org/x/image v0.43.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/text v0.38.0 // indirect
 )
+
+replace go.hasen.dev/shirei => ../..
+
+replace go.hasen.dev/shirei/ext/window => ../../ext/window

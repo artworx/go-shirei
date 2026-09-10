@@ -2,6 +2,7 @@ package main
 
 import (
 	"cmp"
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -103,15 +104,17 @@ type DiskUsageAnalyzer struct {
 var appData = new(DiskUsageAnalyzer)
 
 func main() {
-	// `dir_weight --png out.png [path]` scans path (default: home) for a few seconds,
+	// `dir_weight -png out.png [path]` scans path (default: home) for a few seconds,
 	// then renders one settled frame headlessly and exits — the standard
 	// --png verification path (tutorial §17), same as the other examples.
-	if len(os.Args) >= 3 && os.Args[1] == "--png" {
+	png := flag.String("png", "", "write one settled frame to PATH and exit")
+	flag.Parse()
+	if *png != "" {
 		scanPath := home
-		if len(os.Args) >= 4 {
-			scanPath = os.Args[3]
+		if flag.NArg() > 0 {
+			scanPath = flag.Arg(0)
 		}
-		renderPNG(os.Args[2], scanPath)
+		renderPNG(*png, scanPath)
 		return
 	}
 
@@ -145,6 +148,7 @@ func renderPNG(outPath, scanPath string) {
 func RootView() {
 	ScanResultPanel()
 	ProfileButton("dir_weight")
+	FPSCounter()
 }
 
 func Separator() {

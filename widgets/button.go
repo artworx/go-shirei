@@ -1,6 +1,8 @@
 package widgets
 
 import (
+	"slices"
+
 	. "go.hasen.dev/shirei"
 )
 
@@ -20,19 +22,24 @@ type f32 = float32
 type ButtonState struct {
 	Hovered  bool
 	Active   bool // pointer captured on mouse-down, held until release
-	Clicked  bool // completed click this frame (release while still hovered)
+	Clicked  bool // completed click this frame (pointer or Space/Enter released while still engaged)
 	Disabled bool
+	HasFocus bool // this container holds keyboard focus
 	// Local is the pointer position relative to the container's screen
 	// top-left. Meaningful while Hovered or Active; otherwise whatever the
 	// pointer last reported relative to this box.
 	Local Vec2
 }
 
-// ProcessButtonEvents analyzes pointer interaction with the current container
-// and returns a snapshot. When disabled, no press capture runs and Clicked is
-// always false. Does not take keyboard focus.
+// ProcessButtonEvents analyzes pointer and keyboard interaction with the
+// current container and returns a snapshot. Call it before any child is
+// added (it may ModAttrs). When disabled, no press capture runs, Clicked
+// is always false, and the container is kept out of the tab ring.
 //
 // Interaction:
+//   - Focus: the container is Focusable; a pointer press on it takes
+//     keyboard focus. Space or Enter while focused: Active while held,
+//     Clicked on release (cancelled if focus is lost before release).
 //   - Touch: Active while a latched contact is down; Clicked on lift if the
 //     contact was still over this container on the last active frame
 //   - Mouse: PressAction (down while hovered → Active; release while hovered
@@ -45,6 +52,7 @@ type ButtonState struct {
 //	    st := ProcessButtonEvents(false)
 //	    if st.Hovered { ModAttrs(...) }
 //	    if st.Active  { ModAttrs(...) }
+//	    if st.HasFocus { ModAttrs(...) }
 //	    Label("Go")
 //	    clicked = st.Clicked
 //	})
@@ -56,8 +64,43 @@ func ProcessButtonEvents(disabled bool) ButtonState {
 	st.Local = Vec2Sub(GetInputState().MousePoint, origin)
 	if disabled {
 		// Still report Hovered/Local so skins can dim or show a forbid
-		// cue; never capture the pointer or report a click.
+		// cue; never capture the pointer or report a click. Drop out of
+		// the tab ring even if the caller passed Attrs(Focusable).
+		ModAttrs(func(a *AttrSet) { a.Focusable = false })
+		st.HasFocus = HasFocus()
 		return st
+	}
+
+	ModAttrs(Focusable)
+	FocusOnClick()
+	st.HasFocus = HasFocus()
+
+	type keyPress struct {
+		key   KeyCode // 0 = none
+		epoch int64
+	}
+	kp := Use[keyPress]("btn-key")
+	if !st.HasFocus {
+		kp.key = 0
+	} else if kp.key == 0 {
+		switch GetFrameInput().Key {
+		case KeySpace, KeyEnter:
+			kp.key = GetFrameInput().Key
+			kp.epoch = InputEpoch()
+			st.Active = true
+			RequestNextFrame()
+		}
+	} else {
+		held := kp.epoch == InputEpoch() ||
+			GetFrameInput().Key == kp.key ||
+			slices.Contains(GetInputState().DownKeys, kp.key)
+		if held {
+			st.Active = true
+		} else {
+			st.Clicked = true
+			kp.key = 0
+			RequestNextFrame()
+		}
 	}
 
 	// Latched contact while a finger presses this control (0 = none).
@@ -246,6 +289,8 @@ func ButtonExt(label string, attrs ButtonAttrs, look ButtonLook) bool {
 	var action bool
 	Container(Attrs(), func() {
 		st := ProcessButtonEvents(attrs.Disabled)
+		NextAccessRole("button")
+		AssignAccess()
 		action = st.Clicked
 
 		hue, sat, light := accent[0], accent[1], accent[2]
@@ -264,6 +309,9 @@ func ButtonExt(label string, attrs ButtonAttrs, look ButtonLook) bool {
 			textColor[3] = 0.5
 			// Same stroke width as enabled; only color/alpha change for the mute look.
 			borderColor = Vec4{0, 0, 75, 1}
+		} else if st.HasFocus {
+			borderWidth = 2
+			borderColor = FocusRing
 		}
 
 		top := light + topBoost

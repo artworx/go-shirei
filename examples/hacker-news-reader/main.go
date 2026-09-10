@@ -6,11 +6,12 @@
 // top-level on open, nested only when the user expands a parent.
 //
 //	go run .                 # GUI
-//	go run . --png out.png   # headless front page (live HN API; sample on failure)
-//	go run . --png-post out.png  # headless post view (sample data, offline)
+//	go run . -png out.png        # headless front page (live HN API; sample on failure)
+//	go run . -png-post out.png   # headless post view (sample data, offline)
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"sync"
@@ -62,20 +63,23 @@ var appData = &AppState{
 }
 
 func main() {
-	if len(os.Args) >= 3 && os.Args[1] == "--png" {
+	png := flag.String("png", "", "write a front-page frame to PATH and exit")
+	pngPost := flag.String("png-post", "", "write a post-view frame to PATH and exit (sample data)")
+	flag.Parse()
+	if *png != "" {
 		if err := seedLiveFrontPage(); err != nil {
 			fmt.Fprintln(os.Stderr, "live front page failed, using sample data:", err)
 			seedSampleData(false)
 		}
-		if err := RenderToPNG(os.Args[2], 420, 720, RootView); err != nil {
+		if err := RenderToPNG(*png, 420, 720, RootView); err != nil {
 			fmt.Println("render to png failed:", err)
 			os.Exit(1)
 		}
 		return
 	}
-	if len(os.Args) >= 3 && os.Args[1] == "--png-post" {
+	if *pngPost != "" {
 		seedSampleData(true)
-		if err := RenderToPNG(os.Args[2], 420, 720, RootView); err != nil {
+		if err := RenderToPNG(*pngPost, 420, 720, RootView); err != nil {
 			fmt.Println("render to png failed:", err)
 			os.Exit(1)
 		}
@@ -414,7 +418,7 @@ func seedSampleData(postScreen bool) {
 	appData.expanded = map[int]bool{10: true}
 	appData.comments = []*CommentNode{
 		{
-			Item: &Item{ID: 10, By: "alice", Time: 1710001000, Text: long, Kids: []int{11}},
+			Item:  &Item{ID: 10, By: "alice", Time: 1710001000, Text: long, Kids: []int{11}},
 			Depth: 0, KidsFetched: true,
 			Kids: []*CommentNode{
 				{Item: &Item{ID: 11, By: "bob", Time: 1710002000, Text: "Nested reply with more wrapping text: the indent eats width so the budget must shrink with depth."}, Depth: 1, KidsFetched: true},

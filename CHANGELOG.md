@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.6.8 - 2026-09-10
+
+* GPU rendering by default on all platform backends, except X11.
+* Substantial performance improvement pass on the layout engine.
+* Most stock widgets are keyboard-controllable, with a visible focus ring.
+* Windowed tests can drive a running app over a local command port.
+  See [drive-tutorial](docs/drive-tutorial.md).
+
+### Upgrading
+
+* `RenderData` is geometry and animation channels only — it no longer
+embeds `AttrSet`. Scroll is `GetScrollOffset` / `GetScrollOffsetOf`;
+current visuals are `GetAttrs()`. `GetRenderData().Background` and
+`.ScrollOffset` do not compile.
+
+* `AddExitCleanup` runs on window close and `app.Quit`.
+
+* Field `Render` on `TableColumn` renamed to `Cell`.
+
+* `SegmentedControl` takes a builder body. Was
+  `SegmentedControl(&v, Cell("A", a), Cell("B", b))`; now
+  `SegmentedControl(&v, func() { SegmentedCell("A", a); SegmentedCell("B", b) })`.
+  `widgets.Cell` is gone.
+
+* `OptionButton` no longer takes the target pointer; wrap the set in
+  `OptionGroup`. Was `OptionButton(&v, "A", a)`; now
+  `OptionGroup(&v, func() { OptionButton("A", a) })`.
+
 ## v0.6.7 — 2026-08-17
 
 Point release: cross-platform OS dark mode (`ext/darkmode`) and window control (`ext/window`)

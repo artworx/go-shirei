@@ -446,42 +446,42 @@ func moduleColumns() []TableColumn[*Module] {
 	return []TableColumn[*Module]{
 		{
 			Label:  "Module",
-			Render: func(m *Module) { ModuleNameCell(m) },
+			Cell: func(m *Module) { ModuleNameCell(m) },
 			Less:   func(a, b *Module) bool { return a.Path < b.Path },
 		},
 		{
 			Label: "Code", Width: colSize, DefaultDesc: true,
-			Render: func(m *Module) { sizeCell(m.CodeSize, formatSize(m.CodeSize)) },
+			Cell: func(m *Module) { sizeCell(m.CodeSize, formatSize(m.CodeSize)) },
 			Less:   func(a, b *Module) bool { return a.CodeSize < b.CodeSize },
 		},
 		{
 			Label: "%", Width: colPct, DefaultDesc: true,
-			Render: func(m *Module) { numCell(formatPct(m.CodeSize, codeTotal)) },
+			Cell: func(m *Module) { numCell(formatPct(m.CodeSize, codeTotal)) },
 			Less:   func(a, b *Module) bool { return a.CodeSize < b.CodeSize },
 		},
 		{
 			Label: "Cum", Width: colSize, DefaultDesc: true,
-			Render: func(m *Module) { sizeCell(model.cum[m.Path], formatSize(model.cum[m.Path])) },
+			Cell: func(m *Module) { sizeCell(model.cum[m.Path], formatSize(model.cum[m.Path])) },
 			Less:   func(a, b *Module) bool { return model.cum[a.Path] < model.cum[b.Path] },
 		},
 		{
 			Label: "Cum%", Width: colPct, DefaultDesc: true,
-			Render: func(m *Module) { numCell(formatPct(model.cum[m.Path], codeTotal)) },
+			Cell: func(m *Module) { numCell(formatPct(model.cum[m.Path], codeTotal)) },
 			Less:   func(a, b *Module) bool { return model.cum[a.Path] < model.cum[b.Path] },
 		},
 		{
 			Label: "Funcs", Width: colFuncs, DefaultDesc: true,
-			Render: func(m *Module) { numCell(formatCount(m.NumFuncs)) },
+			Cell: func(m *Module) { numCell(formatCount(m.NumFuncs)) },
 			Less:   func(a, b *Module) bool { return a.NumFuncs < b.NumFuncs },
 		},
 		{
 			Label: "Version", Width: colVersion,
-			Render: func(m *Module) { Label(shortVersion(m.Version), FontSize(11), TextColorVec(Vec4{0, 0, 45, 1})) },
+			Cell: func(m *Module) { Label(shortVersion(m.Version), FontSize(11), TextColorVec(Vec4{0, 0, 45, 1})) },
 			Less:   func(a, b *Module) bool { return a.Version < b.Version },
 		},
 		{
 			Label: "Via",
-			Render: func(m *Module) {
+			Cell: func(m *Module) {
 				via := viaText(m)
 				if via == "(direct)" {
 					Label(via, FontSize(11), FontStyle(StyleItalic), TextColorVec(Vec4{0, 0, 55, 1}))
@@ -670,17 +670,17 @@ func edgeSection(heading string, mods []*Module) {
 		cols := []TableColumn[*Module]{
 			{
 				Label:  "Module",
-				Render: func(m *Module) { ModuleNameCell(m) },
+				Cell: func(m *Module) { ModuleNameCell(m) },
 				Less:   func(a, b *Module) bool { return a.Path < b.Path },
 			},
 			{
 				Label: "Code", Width: colSize, DefaultDesc: true,
-				Render: func(m *Module) { sizeCell(m.CodeSize, formatSize(m.CodeSize)) },
+				Cell: func(m *Module) { sizeCell(m.CodeSize, formatSize(m.CodeSize)) },
 				Less:   func(a, b *Module) bool { return a.CodeSize < b.CodeSize },
 			},
 			{
 				Label: "%", Width: colPct, DefaultDesc: true,
-				Render: func(m *Module) { numCell(formatPct(m.CodeSize, codeTotal)) },
+				Cell: func(m *Module) { numCell(formatPct(m.CodeSize, codeTotal)) },
 				Less:   func(a, b *Module) bool { return a.CodeSize < b.CodeSize },
 			},
 		}

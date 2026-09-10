@@ -70,8 +70,11 @@ func TitleBar() {
 		}
 		Label("Shirei Piano", FontSize(15), FontWeight(WeightBold), TextColor(0, 0, 100, 1))
 		Spacer(16)
-		SegmentedControl(&appData.voice,
-			Cell("Strings", VoiceString), Cell("Flute", VoiceFlute), Cell("Sine", VoiceSine))
+		SegmentedControl(&appData.voice, func() {
+			SegmentedCell("Strings", VoiceString)
+			SegmentedCell("Flute", VoiceFlute)
+			SegmentedCell("Sine", VoiceSine)
+		})
 		Spacer(12)
 		Filler(1)
 		Slider(&appData.volume, SliderAttrs{Min: 0, Max: 1, Width: 120})

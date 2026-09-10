@@ -1645,6 +1645,77 @@ func TestTextInputDescendersNotClipped(t *testing.T) {
 	}
 }
 
+// Latin glyphs in a mixed Latin+Arabic field sit on the same vertical
+// origin as a Latin-only field. Fallback-face descenders do not add
+// top pad to the text block.
+func TestTextInputMixedScriptDoesNotShiftDown(t *testing.T) {
+	InitFontSubsystem()
+	st := DefaultTextStyle()
+	mixed := ShapeText("ABC dest ابجد", st)
+	if len(mixed.Lines) == 0 {
+		t.Skip("no usable system fonts for text shaping")
+	}
+	var latinFont, arabicFont FontId
+	for _, seg := range mixed.Lines[0].Segments {
+		for _, g := range seg.Glyphs {
+			if int(g.Cluster) < 0 || int(g.Cluster) >= len(mixed.Runes) {
+				continue
+			}
+			r := mixed.Runes[g.Cluster]
+			switch {
+			case r >= 0x0600 && r <= 0x06FF:
+				arabicFont = g.FontId
+			case (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z'):
+				if latinFont == 0 {
+					latinFont = g.FontId
+				}
+			}
+		}
+	}
+	if arabicFont == 0 || arabicFont == latinFont {
+		t.Skip("no distinct Arabic fallback face")
+	}
+
+	firstInkY := func(buf string) int {
+		b := buf
+		attrs := DefaultTextInputAttrs()
+		attrs.NoAutoFocus = true
+		img := RenderToImage(220, 60, func() {
+			Container(Attrs(Viewport), func() {
+				TextInputExt(&b, attrs)
+			})
+		})
+		s := int(HeadlessScale)
+		if s < 1 {
+			s = 1
+		}
+		// Left of the field, past the 1px border — "ABC" sits here in both
+		// strings (LTR paragraph, Arabic run on the right).
+		for y := 0; y < img.Bounds().Dy(); y++ {
+			for x := 2 * s; x < 70*s; x++ {
+				r, g, b, _ := img.At(x, y).RGBA()
+				if r>>8 < 100 && g>>8 < 100 && b>>8 < 100 {
+					return y
+				}
+			}
+		}
+		return -1
+	}
+
+	latinY := firstInkY("ABC dest")
+	mixedY := firstInkY("ABC dest ابجد")
+	if latinY < 0 || mixedY < 0 {
+		t.Fatalf("no glyph ink: latin Y=%d mixed Y=%d", latinY, mixedY)
+	}
+	s := int(HeadlessScale)
+	if s < 1 {
+		s = 1
+	}
+	if d := mixedY - latinY; d > s+1 {
+		t.Fatalf("mixed-script ink starts %d px lower than latin-only (latin Y=%d mixed Y=%d)", d, latinY, mixedY)
+	}
+}
+
 // TestPasswordInputClipboard pins that a masked input never places its
 // content on the clipboard: copy and cut are suppressed in the shell.
 // (Historically copy produced the mask bullets — useless; once the

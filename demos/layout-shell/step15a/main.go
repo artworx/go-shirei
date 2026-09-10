@@ -10,6 +10,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"time"
@@ -86,8 +87,10 @@ func init() {
 }
 
 func main() {
-	if len(os.Args) >= 3 && os.Args[1] == "--png" {
-		if err := RenderToPNG(os.Args[2], winW, winH, frame); err != nil {
+	png := flag.String("png", "", "write one settled frame to PATH and exit")
+	flag.Parse()
+	if *png != "" {
+		if err := RenderToPNG(*png, winW, winH, frame); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -233,6 +236,9 @@ func sendCircle(disabled bool) bool {
 		}
 		if st.Active && !disabled {
 			ModAttrs(Background(220, 55, 42, 1))
+		}
+		if st.HasFocus && !disabled {
+			ModAttrs(BorderWidth(2), BorderColor(0, 0, 100, 0.9))
 		}
 		Icon(TypArrowUp, FontSize(18), TextColor(0, 0, 100, 1))
 	})

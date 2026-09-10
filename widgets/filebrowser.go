@@ -3,7 +3,7 @@ package widgets
 import (
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	. "go.hasen.dev/shirei"
@@ -65,6 +65,8 @@ func DirectoryBrowseExt(text *string, attrs FileBrowserAttrs) {
 	st := Use[directoryBrowseState]("directory-browse")
 
 	Container(Attrs(Row, CrossMid, Gap(8), Expand), func() {
+		NextAccessRole("group")
+		AssignAccess()
 		input := DefaultTextInputAttrs()
 		input.NoAutoFocus = attrs.NoAutoFocus
 		if attrs.MinWidth > 0 {
@@ -401,11 +403,14 @@ func browserListing(cwd string, attrs FileBrowserAttrs) []browserEntry {
 	}
 	if len(out) > 1 {
 		rest := out[1:]
-		sort.SliceStable(rest, func(i, j int) bool {
-			if rest[i].dir != rest[j].dir {
-				return rest[i].dir
+		slices.SortStableFunc(rest, func(a, b browserEntry) int {
+			if a.dir != b.dir {
+				if a.dir {
+					return -1
+				}
+				return 1
 			}
-			return strings.ToLower(rest[i].name) < strings.ToLower(rest[j].name)
+			return strings.Compare(strings.ToLower(a.name), strings.ToLower(b.name))
 		})
 	}
 	return out

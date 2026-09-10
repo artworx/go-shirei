@@ -1,18 +1,19 @@
 package widgets
 
 import (
-	"sort"
+	"slices"
 
 	. "go.hasen.dev/shirei"
 )
 
 // TableColumn describes one column of a Table: how wide it is, how to
-// render a cell, and (optionally) how to compare two rows for sorting by
+// draw a body cell, and (optionally) how to compare two rows for sorting by
 // this column. A nil Less means the column can't be clicked to sort.
 type TableColumn[T any] struct {
 	Label       string
-	Width       f32 // 0 = flexible (Grow(1)); otherwise a fixed pixel width
-	Render      func(row T)
+	AccessName  string // header query name (lowercase); empty means the header is not assigned
+	Width       f32    // 0 = flexible (Grow(1)); otherwise a fixed pixel width
+	Cell        func(row T) // body cell; runs inside the cell container
 	Less        func(a, b T) bool
 	DefaultDesc bool // sort direction the first time this column is clicked
 }
@@ -55,6 +56,12 @@ type TableAttrs[T any] struct {
 	// hover highlight, click-to-select) via ModAttrs / IsHovered /
 	// PressAction.
 	OnRow func(index int, row T)
+
+	// ScrollOffset, when non-nil, is the caller's vertical scroll in pixels.
+	// Written with the settled offset each frame. When the pointer identity
+	// changes (a different owner's slot) or the table remounts, the list is
+	// restored to *ScrollOffset.
+	ScrollOffset *f32
 }
 
 const tableHeaderHeight = 30
@@ -174,10 +181,14 @@ func TableExt[T any](key any, attrs TableAttrs[T], columns []TableColumn[T], row
 
 				Container(headerCellAttrs(col), func() {
 					if sortable {
-						if IsHovered() {
+						st := ProcessButtonEvents(false)
+						if st.Hovered {
 							ModAttrs(Background(0, 0, 87, 1))
 						}
-						if PressAction() {
+						if st.HasFocus {
+							ModAttrs(BorderWidth(2), BorderColorVec(FocusRing))
+						}
+						if st.Clicked {
 							if state.Column == colIndex {
 								state.Desc = !state.Desc
 							} else {
@@ -185,6 +196,13 @@ func TableExt[T any](key any, attrs TableAttrs[T], columns []TableColumn[T], row
 								state.Desc = col.DefaultDesc
 							}
 						}
+					}
+					if col.AccessName != "" {
+						NextAccessName(col.AccessName)
+						if sortable {
+							NextAccessRole("button")
+						}
+						AssignAccess()
 					}
 
 					// The label sits inside a small chip that lights up on
@@ -218,11 +236,21 @@ func TableExt[T any](key any, attrs TableAttrs[T], columns []TableColumn[T], row
 			sorted = append([]T(nil), rows...) // copy: never mutate the caller's slice
 			less := columns[state.Column].Less
 			desc := state.Desc
-			sort.SliceStable(sorted, func(i, j int) bool {
+			// One less() call per comparison: -1 when strictly less, else 1
+			// (never 0). Stable sort only branches on cmp < 0, so ties keep
+			// insertion order — same semantics as a bool less, without a
+			// second less(b, a) probe to distinguish equality.
+			slices.SortStableFunc(sorted, func(a, b T) int {
 				if desc {
-					return less(sorted[j], sorted[i])
+					if less(b, a) {
+						return -1
+					}
+					return 1
 				}
-				return less(sorted[i], sorted[j])
+				if less(a, b) {
+					return -1
+				}
+				return 1
 			})
 		}
 
@@ -243,11 +271,25 @@ func TableExt[T any](key any, attrs TableAttrs[T], columns []TableColumn[T], row
 				}
 				forEachColumn(bodySeparator, func(_ int, col TableColumn[T]) {
 					Container(columnAttrs(col), func() {
-						col.Render(row)
+						col.Cell(row)
 					})
 				})
 			})
 		}
-		VirtualListView(nil, len(sorted), itemId, itemHeight, itemView)
+		const tableListKey = "body"
+		if attrs.ScrollOffset != nil {
+			owner := Use[*f32]("table-scroll-owner")
+			if *owner != attrs.ScrollOffset {
+				*owner = attrs.ScrollOffset
+				VirtualListView_ScrollTo(tableListKey, *attrs.ScrollOffset)
+			}
+		}
+		VirtualListViewExt(tableListKey, VirtualListAttrs{
+			ItemCount:       len(sorted),
+			ItemKey:         itemId,
+			ItemHeight:      itemHeight,
+			ItemView:        itemView,
+			OutScrollOffset: attrs.ScrollOffset,
+		})
 	})
 }

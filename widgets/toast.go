@@ -287,6 +287,13 @@ func toastCard(t toastEntry, now time.Time) {
 	// NoClickThrough: sit inside the ClickThrough corner host but accept hits.
 	cardId := ContainerWithKey(t.id, Attrs(NoClickThrough, FixWidth(w), Clip, Corners(8),
 		BackgroundVec(a.Background), BoxShadow(12), NoAnimate), func() {
+		NextAccessRole("alert")
+		if a.Title != "" {
+			NextAccessValue(a.Title)
+		} else if a.Body != "" {
+			NextAccessValue(a.Body)
+		}
+		AssignAccess()
 		// Expand so this column takes the card width; without it the row is
 		// content-sized and Filler/Grow have no leftover to push × right.
 		Container(Attrs(Expand, Pad(pad), Gap(8)), func() {
@@ -354,6 +361,8 @@ func toastCard(t toastEntry, now time.Time) {
 
 func toastDismissButton(id ToastId, fg Vec4) ContainerId {
 	return ContainerWithKey(toastDismissKey(id), Attrs(FixSize(28, 28), Center, Corners(4)), func() {
+		NextAccessRole("button")
+		AssignAccess()
 		if IsHovered() {
 			ModAttrs(Background(0, 0, 100, 0.15))
 		}

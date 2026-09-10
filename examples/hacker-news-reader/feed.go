@@ -74,13 +74,13 @@ func feedScreen() {
 		feedSeg.FrameCorners = 0
 		feedSeg.Expand = true
 		feedSeg.Accent = hnOrange
-		if SegmentedControlExt(&feed, feedSeg,
-			Cell("Front", FeedFront),
-			Cell("New", FeedNew),
-			Cell("Show", FeedShow),
-			Cell("Ask", FeedAsk),
-			Cell("Jobs", FeedJobs),
-		) {
+		if SegmentedControlExt(&feed, feedSeg, func() {
+			SegmentedCell("Front", FeedFront)
+			SegmentedCell("New", FeedNew)
+			SegmentedCell("Show", FeedShow)
+			SegmentedCell("Ask", FeedAsk)
+			SegmentedCell("Jobs", FeedJobs)
+		}) {
 			appData.mu.Lock()
 			appData.feed = feed
 			appData.mu.Unlock()

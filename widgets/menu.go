@@ -18,25 +18,26 @@ func _popupBorder(a *AttrSet) {
 }
 
 func _popupShadow(a *AttrSet) {
-	a.Shadow.Blur = 16
+	a.Shadow.Blur = 6
 	a.Shadow.Alpha = 0.12
-	a.Shadow.Offset[1] = 3
+	a.Shadow.Offset[1] = 2
 }
 
 var MenuIcon = TypArrowSortedDown
 
 // MenuButton renders a button that opens a dropdown menu, built by fn, when
-// clicked. The menu closes when one of its items is chosen or the user clicks
-// away.
+// clicked or when Space/Enter is pressed while the trigger is focused. The
+// menu closes when one of its items is chosen, the user clicks away, Escape
+// is pressed, or Tab moves to the next control.
 //
 // Typeahead filtering is opt-in: call MenuFilterQuery (or MenuFilterMatches)
 // inside fn. Menus that never call it have no filter field and do not capture
 // typing. See MenuFilterQuery.
 //
-// When filtering is opted in, Up/Down move a keyboard selection (nothing is
-// selected until the user presses Down), Enter activates the selection, and
-// Escape clears the query then closes — same idea as FileSelector /
-// FileBrowserPanel (except menus start with no keyboard selection).
+// Up/Down move a keyboard selection (nothing is selected until Down, or
+// until Down opens the menu). Enter or Space activates the selection.
+// Escape clears the query (filterable) then closes. Tab walks Focusable
+// contents (spliced after the trigger); leaving the popup closes it.
 func MenuButton(icon IconGlyph, label string, fn func()) {
 	MenuButtonExt(label, ButtonAttrs{Icon: icon}, DefaultButtonLook(), fn)
 }
@@ -103,6 +104,8 @@ func MenuFilterMatches(label string) bool {
 // look. The menu behavior and contents are otherwise identical to MenuButton.
 func MenuButtonExt(label string, attrs ButtonAttrs, look ButtonLook, fn func()) {
 	Container(Attrs(), func() {
+		NextAccessRole("menu")
+		AssignAccess()
 		type MenuState struct {
 			open   bool
 			btnId  ContainerId
@@ -112,7 +115,7 @@ func MenuButtonExt(label string, attrs ButtonAttrs, look ButtonLook, fn func()) 
 			filterQuery string
 			// composing is set by the filter field after ProcessTextInput.
 			composing bool
-			// Keyboard selection among visible items (filterable menus only).
+			// Keyboard selection among visible MenuItems.
 			// -1 means no keyboard selection (default until the user presses Down).
 			selected        int
 			lastFilterQuery string
@@ -120,22 +123,41 @@ func MenuButtonExt(label string, attrs ButtonAttrs, look ButtonLook, fn func()) 
 		}
 		var state = Use[MenuState]("menu-state")
 		if ButtonExt(label, attrs, look) {
-			state.open = !state.open
-			if state.open {
-				// Fresh query/selection each open. Keep wantsFilter sticky so a
-				// menu that already opted in still has its filter field on the
-				// first frame (no one-frame lag before typing works).
-				state.filterQuery = ""
-				state.composing = false
-				state.selected = -1
-				state.lastFilterQuery = ""
-				state.itemCount = 0
+			key := GetFrameInput().Key
+			// While open, Space/Enter belong to the item list (activate the
+			// highlight). A pointer click on the trigger still toggles.
+			if state.open && (key == KeyEnter || key == KeySpace) {
+				// leave open
+			} else {
+				state.open = !state.open
+				if state.open {
+					// Fresh query/selection each open. Keep wantsFilter sticky so a
+					// menu that already opted in still has its filter field on the
+					// first frame (no one-frame lag before typing works).
+					state.filterQuery = ""
+					state.composing = false
+					state.selected = -1
+					state.lastFilterQuery = ""
+					state.itemCount = 0
+				}
 			}
+		}
+
+		state.btnId = GetLastId()
+		if !state.open && IdHasFocus(state.btnId) && GetFrameInput().Key == KeyDown {
+			state.open = true
+			state.filterQuery = ""
+			state.composing = false
+			state.selected = 0
+			state.lastFilterQuery = ""
+			state.itemCount = 0
+			GetFrameInput().Key = KeyCodeNone
 		}
 
 		if state.open && _menuItemPressed {
 			_menuItemPressed = false
 			state.open = false
+			FocusImmediateOn(state.btnId)
 		}
 
 		if !state.open {
@@ -146,8 +168,6 @@ func MenuButtonExt(label string, attrs ButtonAttrs, look ButtonLook, fn func()) 
 			state.itemCount = 0
 			// wantsFilter stays true once this MenuButton has ever filtered.
 		}
-
-		state.btnId = GetLastId()
 
 		if state.open {
 
@@ -164,7 +184,8 @@ func MenuButtonExt(label string, attrs ButtonAttrs, look ButtonLook, fn func()) 
 				// as before — the cap only engages on overflow.
 				maxH := GetHost().WindowSize[1] - 8
 				ContainerWithKey("action-menu", Attrs(MinWidth(100), MaxWidth(600), MaxHeight(maxH),
-					Corners(4), Pad2(6, 0), Gap(2), Clip, BackgroundVec(_menuBG), _popupBorder, _popupShadow), func() {
+					Corners(4), Pad2(6, 0), Gap(2), Clip, NoAnimate, BackgroundVec(_menuBG), _popupBorder, _popupShadow,
+					TabAfter(state.btnId)), func() {
 					ModAttrs(FloatVec(_getPositionRelativeTo(state.btnId)))
 					state.menuId = CurrentId()
 
@@ -185,9 +206,8 @@ func MenuButtonExt(label string, attrs ButtonAttrs, look ButtonLook, fn func()) 
 								BorderWidth(1), BorderColor(0, 0, 0, 0.12),
 								MinHeight(fs+pad[PAD_TOP]+pad[PAD_BOTTOM]))
 						} else {
-							// Invisible sink: zero height, still Focusable + process.
-							fieldAttrs = Attrs(Expand, Focusable, Clip,
-								MaxHeight(0), MinHeight(0))
+							// Invisible sink: zero height, not a tab stop.
+							fieldAttrs = Attrs(Expand, Clip, MaxHeight(0), MinHeight(0))
 						}
 						ContainerWithKey("menu-filter", fieldAttrs, func() {
 							// AutoFocus only runs on FirstRender; after the menu
@@ -196,8 +216,11 @@ func MenuButtonExt(label string, attrs ButtonAttrs, look ButtonLook, fn func()) 
 							// and typing/arrows do nothing. Steal focus every
 							// frame while this filterable menu is open (same
 							// idea as keeping the filter box focused in
-							// FileSelector).
-							Focus()
+							// FileSelector). Skip on Tab so prologue cycling
+							// is not overwritten.
+							if GetFrameInput().Key != KeyTab {
+								Focus()
+							}
 
 							cfg := TextInputConfig{
 								FontSize:          fs,
@@ -244,48 +267,46 @@ func MenuButtonExt(label string, attrs ButtonAttrs, look ButtonLook, fn func()) 
 					_menuFilter = prev
 					state.itemCount = itemCount
 
-					// Keyboard nav for filterable menus only (after item count known).
-					if state.wantsFilter {
-						if itemCount == 0 {
-							state.selected = -1
-						} else if state.selected >= itemCount {
-							state.selected = itemCount - 1
-						} else if state.selected < -1 {
-							state.selected = -1
-						}
+					if itemCount == 0 {
+						state.selected = -1
+					} else if state.selected >= itemCount {
+						state.selected = itemCount - 1
+					} else if state.selected < -1 {
+						state.selected = -1
+					}
 
-						// Skip list keys while IME is composing (Enter commits composition).
-						if !state.composing {
-							switch GetFrameInput().Key {
-							case KeyDown:
-								if itemCount > 0 {
-									if state.selected < 0 {
-										state.selected = 0
-									} else if state.selected+1 < itemCount {
-										state.selected++
-									}
+					// Skip list keys while IME is composing (Enter commits composition).
+					if !state.composing {
+						switch GetFrameInput().Key {
+						case KeyDown:
+							if itemCount > 0 {
+								if state.selected < 0 {
+									state.selected = 0
+								} else if state.selected+1 < itemCount {
+									state.selected++
 								}
-								GetFrameInput().Key = KeyCodeNone
-							case KeyUp:
-								if state.selected > 0 {
-									state.selected--
-								} else if state.selected == 0 {
-									state.selected = -1
-								}
-								GetFrameInput().Key = KeyCodeNone
-							case KeyEscape:
-								if state.filterQuery != "" || state.composing {
-									state.filterQuery = ""
-									state.composing = false
-									state.selected = -1
-									state.lastFilterQuery = ""
-								} else {
-									state.open = false
-								}
-								GetFrameInput().Key = KeyCodeNone
 							}
-							// Enter: handled in MenuItem while building (selected match).
+							GetFrameInput().Key = KeyCodeNone
+						case KeyUp:
+							if state.selected > 0 {
+								state.selected--
+							} else if state.selected == 0 {
+								state.selected = -1
+							}
+							GetFrameInput().Key = KeyCodeNone
+						case KeyEscape:
+							if state.filterQuery != "" || state.composing {
+								state.filterQuery = ""
+								state.composing = false
+								state.selected = -1
+								state.lastFilterQuery = ""
+							} else {
+								state.open = false
+								FocusImmediateOn(state.btnId)
+							}
+							GetFrameInput().Key = KeyCodeNone
 						}
+						// Enter/Space: handled in MenuItem while building (selected match).
 					}
 				})
 			})
@@ -293,6 +314,10 @@ func MenuButtonExt(label string, attrs ButtonAttrs, look ButtonLook, fn func()) 
 
 		// do this after handling the open menu so that clicks inside the menu can still register!
 		if !IdIsHovered(state.btnId) && !IdIsHovered(state.menuId) && GetFrameInput().Mouse == MouseClick { // click outside!
+			state.open = false
+		}
+		if state.open && state.menuId != nil && FocusedId() != nil &&
+			!IdHasFocus(state.btnId) && !IdHasFocusWithin(state.menuId) {
 			state.open = false
 		}
 	})
@@ -338,14 +363,15 @@ func MenuItem(icon IconGlyph, label string) bool {
 // custom buttons and ButtonExt, with menu-row chrome instead of the
 // elevated face.
 //
-// When the parent menu has opted into filtering, each MenuItem takes part in
-// keyboard selection: the selected row is highlighted, and Enter activates it
-// (unless IME composition is active on the filter field).
+// Each MenuItem takes part in keyboard selection while the parent menu is
+// open: the selected row is highlighted, and Enter or Space activates it
+// (unless IME composition is active on the filter field). Menu rows are
+// not tab stops — arrows move the selection; Tab dismisses the menu.
 func MenuItemExt(label string, attrs ButtonAttrs) bool {
 	var action bool
 	textColor := Vec4{0, 0, 10, 1}
 
-	// Keyboard selection index for filterable menus (stable order of MenuItem calls).
+	// Keyboard selection index (stable order of MenuItem calls this frame).
 	itemIdx := -1
 	kbSelected := false
 	if _menuFilter != nil && _menuFilter.itemCount != nil {
@@ -354,16 +380,23 @@ func MenuItemExt(label string, attrs ButtonAttrs) bool {
 		if _menuFilter.selected != nil && *_menuFilter.selected == itemIdx {
 			kbSelected = true
 		}
-		// Enter activates the keyboard-selected row (previous-frame selection
-		// index; Up/Down are applied after the item list each frame).
-		if kbSelected && !_menuFilter.composing && GetFrameInput().Key == KeyEnter {
-			action = true
-			GetFrameInput().Key = KeyCodeNone
+		// Enter/Space activate the keyboard-selected row (previous-frame
+		// selection index; Up/Down are applied after the item list each frame).
+		if kbSelected && !_menuFilter.composing {
+			switch GetFrameInput().Key {
+			case KeyEnter, KeySpace:
+				action = true
+				GetFrameInput().Key = KeyCodeNone
+			}
 		}
 	}
 
 	Container(Attrs(Row, Expand, CrossAlign(AlignMiddle), BackgroundVec(_menuBG), Pad2(4, 8), Gap(12)), func() {
 		st := ProcessButtonEvents(attrs.Disabled)
+		NextAccessRole("menuitem")
+		AssignAccess()
+		// Rows are arrow-activated, not tab stops.
+		ModAttrs(func(a *AttrSet) { a.Focusable = false })
 		if st.Clicked {
 			action = true
 		}
@@ -404,8 +437,8 @@ func MenuItemExt(label string, attrs ButtonAttrs) bool {
 
 // PopupPanel shows a floating panel, built by fn and styled by a, anchored to
 // anchorId while *toggle is true. It closes (setting *toggle to false) when the
-// user clicks outside it. anchorId is typically the ContainerId of the control
-// that toggles it.
+// user clicks outside it or presses Escape (unless fn already consumed the
+// key). anchorId is typically the ContainerId of the control that toggles it.
 func PopupPanel(toggle *bool, anchorId ContainerId, a AttrSet, fn func()) {
 	if *toggle {
 		var _prevTrigger = _activePanelTrigger
@@ -415,17 +448,29 @@ func PopupPanel(toggle *bool, anchorId ContainerId, a AttrSet, fn func()) {
 		}()
 		var selfId ContainerId
 		Popup(func() {
-			Container(AttrsWith(a, BackgroundVec(_menuBG), _popupBorder, _popupShadow, Clip), func() {
+			Container(AttrsWith(a, BackgroundVec(_menuBG), _popupBorder, _popupShadow, Clip, NoAnimate, TabAfter(anchorId)), func() {
 				ModAttrs(FloatVec(_getPositionRelativeTo(anchorId)))
 				selfId = CurrentId()
 				fn()
 			})
+
+			// After fn so inner content can consume Escape (e.g. a nested
+			// field). Same idea as Modal.
+			if GetFrameInput().Key == KeyEscape {
+				*toggle = false
+				FocusImmediateOn(anchorId)
+				GetFrameInput().Key = KeyCodeNone
+			}
 
 			// do this after handling the open menu so that clicks inside the
 			// menu can still register, but inside the popup call so that the
 			// selfid has been set
 
 			if !IdIsHovered(anchorId) && !IdIsHovered(selfId) && GetFrameInput().Mouse == MouseClick { // click outside!
+				*toggle = false
+			}
+			if *toggle && selfId != nil && FocusedId() != nil &&
+				!IdHasFocus(anchorId) && !IdHasFocusWithin(selfId) {
 				*toggle = false
 			}
 		})

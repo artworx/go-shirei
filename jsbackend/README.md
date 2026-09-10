@@ -1,7 +1,9 @@
 # jsbackend
 
-Browser/wasm shell for shirei. Same contract as every other software backend:
-sample input, `RunFrameFn`, `SoftRenderer.RenderInto`, present a bitmap.
+Browser/wasm shell for shirei. Same contract as every other backend: sample
+input, `RunFrameFn`, present. Default present is GLES 3.00 over WebGL2
+(`gpurender`). `SHIREI_GPU=0`, `window.SHIREI_GPU=0`, or `?shirei_gpu=0`
+falls back to `SoftRenderer` + `putImageData`. No WebGL2 also falls back.
 
 ## Build a static site
 

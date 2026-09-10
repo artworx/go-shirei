@@ -645,14 +645,15 @@ func caseCompositionBidiUnderline() error {
 	if h.buf != buf {
 		return fmt.Errorf("composition mutated buffer: %q", h.buf)
 	}
-	// LastFrameOutput is harvested after frameFn returns; extra idle so we
-	// read the composition frame's surfaces, not a race with harvest.
+	// Extra idle so the composition frame has fully rendered; the case
+	// goroutine runs outside the frame, so take the frame lock to read.
 	h.idle()
-	compOut := LastFrameOutput()
+	var compSurfaces []Surface
+	WithFrameLock(func() { compSurfaces = LastFrameSurfaces() })
 
 	var underW float32
 	var n int
-	for _, s := range compOut.Surfaces {
+	for _, s := range compSurfaces {
 		if s.Stroke == 0 &&
 			s.Color1 == (Vec4{0, 0, 30, 1}) &&
 			abs32(s.Rect.Size[1]-1) < 0.1 &&

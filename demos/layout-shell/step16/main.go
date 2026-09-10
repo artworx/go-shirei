@@ -12,6 +12,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"time"
@@ -93,8 +94,10 @@ func main() {
 	// a light thumb once so every VirtualList / ScrollBars() call matches.
 	SetDefaultScrollBar(darkShellScrollBar)
 
-	if len(os.Args) >= 3 && os.Args[1] == "--png" {
-		if err := RenderToPNG(os.Args[2], winW, winH, frame); err != nil {
+	png := flag.String("png", "", "write one settled frame to PATH and exit")
+	flag.Parse()
+	if *png != "" {
+		if err := RenderToPNG(*png, winW, winH, frame); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -306,6 +309,9 @@ func chatCompose(draft *string, messages *[]msg, textPrim float32) {
 				}
 				if bst.Active && canSend {
 					ModAttrs(Background(accentH, 55, 40, 1))
+				}
+				if bst.HasFocus && canSend {
+					ModAttrs(BorderWidth(2), BorderColor(0, 0, 100, 0.9))
 				}
 				Icon(TypArrowUp, FontSize(18), TextColor(0, 0, 100, 1))
 

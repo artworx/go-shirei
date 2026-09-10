@@ -143,15 +143,21 @@ type Host struct {
 	OpenURL string // non-empty: open this URL after the frame (last write wins)
 
 	// NextFrame is set when the UI wants another frame without input
-	// (animations, settle). Backends also read FrameOutputData.NextFrameRequested.
+	// (animations, settle). A pass that saw pointer/key/text/wheel/touch
+	// also requests exactly one follow-up produce. Backends also read
+	// FrameOutputData.NextFrameRequested.
 	NextFrame atomic.Bool
 
-	// Diagnostics: LayoutTime is produce (RunFrameFn); PaintTime is the last
-	// SoftRenderer pass (set at the end of Render / RenderInto). TotalFrameTime
-	// is reserved for backends that want produce+present wall time.
+	// Diagnostics: LayoutTime is produce (RunFrameFn). PaintTime is the last
+	// GPU encode or SoftRenderer pass. PaintGPU is true when that pass was
+	// Metal. PaintGen increments on each actual paint so present-skip can be
+	// distinguished from a sticky duration. TotalFrameTime is reserved for
+	// backends that want produce+present wall time.
 	TotalFrameTime time.Duration
 	LayoutTime     time.Duration
 	PaintTime      time.Duration
+	PaintGPU       bool
+	PaintGen       uint64
 	ImageScaleTime time.Duration
 
 	// HeadlessRender is set for RenderToPNG / snapshot paths.

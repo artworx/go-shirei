@@ -14,7 +14,7 @@ import (
 // fuzzy path picker (not a traditional file browser; see DirectoryBrowse).
 type FuzzyPathFinderAttrs struct {
 	Title string // modal title; zero → from Dirs/Files
-	Width f32   // modal width; zero → 560
+	Width f32    // modal width; zero → 560
 
 	// Dirs / Files select what the scanner includes. Independent flags —
 	// set both for a mixed list. If neither is set, Dirs defaults to true.
@@ -73,6 +73,8 @@ func FuzzyPathFinderExt(text *string, attrs FuzzyPathFinderAttrs) {
 	st := Use[fuzzyPathFinderState]("fuzzy-path-finder")
 
 	Container(Attrs(Row, CrossMid, Gap(8), Expand), func() {
+		NextAccessRole("group")
+		AssignAccess()
 		input := DefaultTextInputAttrs()
 		input.NoAutoFocus = attrs.NoAutoFocus
 		if attrs.MinWidth > 0 {

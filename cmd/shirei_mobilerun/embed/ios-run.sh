@@ -421,6 +421,7 @@ if [[ "$TARGET" == "sim" ]]; then
 		-framework UIKit \
 		-framework Foundation \
 		-framework QuartzCore \
+		-framework Metal \
 		-framework CoreGraphics \
 		-framework CoreFoundation \
 		-framework Security \

@@ -53,6 +53,7 @@ type identNode struct {
 	parent *identNode
 	typ    uintptr // builder code pointer at creation (0 = no builder)
 	key    any     // explicit id (nil for positional); held, so it pins its pointee
+	serial uint64  // process-unique handle for drive (#N); set at birth
 
 	keyed map[any]*identNode           // explicit-id children
 	pos   map[identChildKey]*identNode // positional children by (type, ordinal)
@@ -71,6 +72,11 @@ type identNode struct {
 	rd      RenderData
 	rdFrame int64
 
+	// scrollOffset is last committed scroll, restored at open when this
+	// node was presented last pass (same rdFrame gate as prevRenderData).
+	// Absent that, the working copy starts at 0.
+	scrollOffset Vec2
+
 	// bornFrame stamps the frame this node's rd (re)appeared after an
 	// absence. Animations use it to tell "has presented-frame history"
 	// (animate from the previous data) from "born during the current
@@ -79,7 +85,7 @@ type identNode struct {
 	bornFrame int64
 
 	// layoutSize is the pre-animation resolved size from the last pass that
-	// laid this node out (see commitLayoutSizesAndDetectStale). Distinct from
+	// laid this node out (see commitLayoutSizeAndDetectStale). Distinct from
 	// rd.ResolvedSize, which may be mid-ease under AnimSize. geometryQueryFrame
 	// stamps the pass that hit a public geometry accessor on this node.
 	layoutSize         Vec2
@@ -134,8 +140,11 @@ type typeClaim struct {
 // would make every fresh container look like it rendered "last frame"
 // (FirstRender false, AutoFocus suppressed; false stale-size settle) on
 // that frame only.
+var nextIdentSerial uint64
+
 func newNode(parent *identNode, typ uintptr, key any) *identNode {
-	return &identNode{parent: parent, typ: typ, key: key, rdFrame: -1, layoutSizeFrame: -1}
+	nextIdentSerial++
+	return &identNode{parent: parent, typ: typ, key: key, serial: nextIdentSerial, rdFrame: -1, layoutSizeFrame: -1}
 }
 
 // identDupCount counts explicit ids claimed more than once under the same
@@ -217,36 +226,32 @@ func rawFuncCodePtr(f func()) uintptr {
 	return **(**uintptr)(unsafe.Pointer(&f))
 }
 
-// frameInProgress is true while RunFrameFn is building/resolving a frame;
-// it decides which frame prevRenderData considers "most recently completed".
-
-// prevRenderData returns the node's render data from the most recently
-// completed frame, mirroring the renderData map's semantics exactly:
-// during a frame's build that's the previous frame; between frames (e.g. a
-// test querying after RunFrameFn returned) it's the just-finished one. A
-// node not rendered in that frame reads as absent — reproducing the map's
-// drop-if-unrendered behavior (FirstRender fires again, scroll offset
-// resets, animations have no source rect).
+// frameInProgress is true while RunFrameFn is building/resolving a frame.
+// During a pass, last presented layout is FrameNumber-1; between frames
+// (tests querying after RunFrameFn) it is FrameNumber itself.
+//
+// prevRenderData returns that pass's rd, or absent if this node was not
+// presented then (FirstRender, scroll starts at 0, no animation source).
 func (n *identNode) prevRenderData() (RenderData, bool) {
 	want := ui.FrameNumber
 	if ui.frameInProgress {
 		want = ui.FrameNumber - 1
 	}
-	if n.rdFrame == want {
-		return n.rd, true
+	if n.rdFrame != want {
+		return RenderData{}, false
 	}
-	return RenderData{}, false
+	return n.rd, true
 }
 
 // queriedRenderData is prevRenderData for the public geometry accessors:
 // a miss flags the frame as incomplete. A hit stamps geometryQueryFrame so
-// commitLayoutSizesAndDetectStale can settle when the layout target moved
+// commitLayoutSizeAndDetectStale can settle when the layout target moved
 // under a still-valid previous-frame answer (resize / reflow), without
 // treating AnimSize easing as instability.
 //
-// Internal callers (FirstRender, animation sources, scroll restore) keep
-// using prevRenderData directly — for them absence is a normal state, not
-// an unmet dependency.
+// Internal callers (animation sources, ScrollOnInput) keep using
+// prevRenderData directly — for them absence is a normal state, not an
+// unmet dependency.
 //
 // A detached node is exempt: it can never resolve (reconciliation can't
 // reach it), so requesting a settle pass for it would put the frame loop

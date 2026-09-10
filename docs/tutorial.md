@@ -22,6 +22,8 @@ Specialized feature write-ups live next to this file (for example
 [drag-drop.md](drag-drop.md) for item drag-and-drop,
 [virtual-list.md](virtual-list.md) for VirtualList and `Measure`,
 [layout-tutorial.md](layout-tutorial.md) for a progressive multi-panel shell,
+[drive-tutorial.md](drive-tutorial.md) for access attributes and windowed
+behavior tests over UDP ([drive.md](drive.md) is the command list),
 and [android.md](android.md) / [ios.md](ios.md) for device runners). Touch and
 multi-touch contacts are covered under Interaction (§6). This file stays a
 general overview.
@@ -37,7 +39,7 @@ An initial version was written with Fugu (SakanaAI).
 
 ## 1. UI as a function of state
 
-Shirei uses a **plain-data, declarative** application model. Your program
+Shirei uses a **plain-data, immediate-mode** application model. Your program
 describes what the whole UI should look like right now whenever Shirei
 evaluates a requested update:
 
@@ -179,16 +181,20 @@ Container(Attrs(Row, Expand, CrossMid, Gap(10), Pad(12)), func() {
 
 ## 3. Verify as you go: headless rendering
 
-Shirei renders with its own software rasterizer, so a frame can be rendered
-**without opening a window**. For AI agents especially, it's recommended to
-build this into the app from the start — it gives a very fast feedback loop for
-everything else in this tutorial:
+Headless snapshots always use Shirei's software rasterizer (`SoftRenderer`), so
+a frame can be rendered **without opening a window** and without a GPU.
+Windowed paint is separate: GPU compositor by default (Metal / GLES / D3D11 /
+WebGL2); X11 stays software; `SHIREI_GPU=0` or init failure falls back to
+software. For AI agents especially, it's recommended to build a PNG path into
+the app from the start — it gives a very fast feedback loop for everything
+else in this tutorial:
 
 ```go
 func main() {
-    // `myapp --png out.png` renders one settled frame and exits
-    if len(os.Args) >= 3 && os.Args[1] == "--png" {
-        if err := RenderToPNG(os.Args[2], 1000, 700, RootView); err != nil {
+    png := flag.String("png", "", "write one settled frame to PATH and exit")
+    flag.Parse()
+    if *png != "" {
+        if err := RenderToPNG(*png, 1000, 700, RootView); err != nil {
             fmt.Println("render failed:", err)
         }
         return
@@ -212,10 +218,13 @@ with animations disabled — so the output is deterministic. This gives you:
 - **AI-friendly verification**: a coding session can render your app and
   *look at it* without a human driving a window.
 
-For testing interactions (clicks, typing, scrolling) headlessly, drive frames
-directly: set `WindowSize`, fill `InputState`/`FrameInput`, and call
+For testing interactions (clicks, typing, scrolling) **headlessly**, drive
+frames directly: set `WindowSize`, fill `InputState`/`FrameInput`, and call
 `RunFrameFn`. The tests in `widgets/semantic_test.go` are the reference
 pattern.
+
+For the same interactions in a **real window** (separate process, loopback
+UDP), see [drive-tutorial.md](drive-tutorial.md).
 
 One habit worth forming: when a screen reaches a state you like, snapshot it.
 The test then guards every future refactor for free.
@@ -733,12 +742,16 @@ scroll without building offscreen rows at all.)
 
 ### Focus and keyboard
 
-Text inputs handle their own focus (`FocusOnClick`, `AutoFocus`) and support
-tab-cycling between `Focusable` containers (`CycleFocusOnTab`). For your own
-focusable widgets, the same primitives are available: `HasFocus()`,
-`Focus()`, `Blur()`. Keyboard state is queried like everything else:
-`FrameInput.Key` (pressed this frame), `FrameInput.Text` (text typed this
-frame, IME-aware), `InputState.Modifiers`, `InputState.DownKeys`.
+Text inputs handle their own focus (`FocusOnClick`, `AutoFocus`). Default
+widgets (`Button`, `CheckBox`, `OptionButton`, `ToggleSwitch`, `Slider`,
+`TextInput`, menus, segmented cells, …) mark their container `Focusable`.
+Tab and Shift+Tab cycle among those containers in source order. Space or
+Enter activates a focused button or toggle; arrows move a focused slider
+or segmented control. For your own focusable widgets, the same primitives
+are available: `ModAttrs(Focusable)`, `HasFocus()`, `Focus()`, `Blur()`.
+Keyboard state is queried like everything else: `FrameInput.Key` (pressed
+this frame), `FrameInput.Text` (text typed this frame, IME-aware),
+`InputState.Modifiers`, `InputState.DownKeys`.
 
 ```go
 TextInput(&appData.filter)       // edits the string in place
@@ -992,12 +1005,12 @@ built-in generic `Table`:
 columns := []TableColumn[*Item]{
     {
         Label:  "Name",
-        Render: func(it *Item) { Label(it.Name) },
+        Cell:   func(it *Item) { Label(it.Name) },
         Less:   func(a, b *Item) bool { return a.Name < b.Name },
     },
     {
         Label: "Size", Width: 90, DefaultDesc: true,
-        Render: func(it *Item) { Label(formatBytes(it.Size)) },
+        Cell:  func(it *Item) { Label(formatBytes(it.Size)) },
         Less:   func(a, b *Item) bool { return a.Size < b.Size },
     },
 }

@@ -12,7 +12,6 @@ import (
 	"flag"
 	"fmt"
 	"math/rand/v2"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -266,18 +265,10 @@ func randomSample() string {
 }
 
 func main() {
-	pngPath := ""
-	// Legacy: fontviewer --png out.png (before flag parsing).
-	args := os.Args[1:]
-	if len(args) >= 2 && args[0] == "--png" {
-		pngPath = args[1]
-		args = args[2:]
-	}
-	fs := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
-	fs.IntVar(&limitFamilies, "limit-families", 0,
+	flag.IntVar(&limitFamilies, "limit-families", 0,
 		"cap the family list after scan (0 = all system fonts; use for tests/snapshots)")
-	fs.StringVar(&pngPath, "png", pngPath, "write one settled frame to PATH and exit")
-	_ = fs.Parse(args)
+	pngPath := flag.String("png", "", "write one settled frame to PATH and exit")
+	flag.Parse()
 
 	appData.sample = randomSample()
 
@@ -285,10 +276,10 @@ func main() {
 	// set, not only criticalFontPaths(). -limit-families still applies after.
 	waitForFontScan(fontScanStable, 8*time.Second)
 
-	if pngPath != "" {
+	if *pngPath != "" {
 		// Headless: no prewarm; parse on demand. Catalog already waited above.
 		syncFamilies()
-		if err := RenderToPNG(pngPath, 1240, 800, RootView); err != nil {
+		if err := RenderToPNG(*pngPath, 1240, 800, RootView); err != nil {
 			fmt.Println("render to png failed:", err)
 		}
 		return

@@ -1,6 +1,8 @@
 package widgets
 
 import (
+	"fmt"
+
 	"go.hasen.dev/generic"
 	. "go.hasen.dev/shirei"
 )
@@ -28,6 +30,7 @@ type SliderState struct {
 	Hovered  bool
 	Active   bool // pointer captured; value is tracking the pointer
 	Disabled bool
+	HasFocus bool
 
 	// Value is *value after step/clamp this frame.
 	Value float32
@@ -51,11 +54,14 @@ type SliderState struct {
 }
 
 // ProcessSlider runs slider interaction on the current container and writes
-// *value (clamped / stepped). Call inside the interactive box (typically
-// Focusable); it does not take keyboard focus. Creates no children — paint
-// the track and handle yourself from the returned state.
+// *value (clamped / stepped). Call inside the interactive box before any
+// child (it may ModAttrs). Creates no children — paint the track and handle
+// yourself from the returned state.
 //
 // Interaction:
+//   - Focus: the container is Focusable; a pointer press takes keyboard
+//     focus. Left/Right (and Up/Down) step the value; Home/End jump to min/max.
+//     Step size is cfg.Step, or 1/10 of the range when Step is 0.
 //   - Touch-drag: value follows the contact X (latched for the contact life
 //     so the finger may leave the box while dragging)
 //   - Mouse press-drag (Active): value follows pointer X; ignored while
@@ -63,8 +69,9 @@ type SliderState struct {
 //
 // Typical custom slider:
 //
-//	Container(Attrs(FixWidth(w), FixHeight(h), Focusable), func() {
+//	Container(Attrs(FixWidth(w), FixHeight(h)), func() {
 //	    st := ProcessSlider(&v, SliderConfig{Min: 0, Max: 1, Width: w, HandleInset: 10})
+//	    if st.HasFocus { ModAttrs(...) }
 //	    // paint track / fill / handle from st.T, st.HandleX, st.Active, …
 //	})
 func ProcessSlider(value *float32, cfg SliderConfig) SliderState {
@@ -75,6 +82,13 @@ func ProcessSlider(value *float32, cfg SliderConfig) SliderState {
 	st.Hovered = IsHovered()
 	origin := GetScreenRect().Origin
 	st.Local = Vec2Sub(GetInputState().MousePoint, origin)
+	if cfg.Disabled {
+		ModAttrs(func(a *AttrSet) { a.Focusable = false })
+	} else {
+		ModAttrs(Focusable)
+		FocusOnClick()
+	}
+	st.HasFocus = HasFocus()
 
 	width := cfg.Width
 	if width <= 0 {
@@ -148,6 +162,21 @@ func ProcessSlider(value *float32, cfg SliderConfig) SliderState {
 			t := x / track
 			generic.Clamp(0, &t, 1)
 			*value = cfg.Min + span*t
+		} else if st.HasFocus && span > 0 {
+			step := cfg.Step
+			if step <= 0 {
+				step = span / 10
+			}
+			switch GetFrameInput().Key {
+			case KeyLeft, KeyDown:
+				*value -= step
+			case KeyRight, KeyUp:
+				*value += step
+			case KeyHome:
+				*value = cfg.Min
+			case KeyEnd:
+				*value = cfg.Max
+			}
 		}
 	}
 
@@ -194,11 +223,19 @@ func Slider(value *float32, attrs SliderAttrs) {
 	barHeight := comfort(4)
 	r := comfort(8) // handle radius
 	height := r * 2
-	Container(Attrs(Row, CrossMid, FixWidth(attrs.Width), Focusable, FixHeight(height)), func() {
+	Container(Attrs(Row, CrossMid, FixWidth(attrs.Width), FixHeight(height)), func() {
 		st := ProcessSlider(value, SliderConfig{
 			Min: attrs.Min, Max: attrs.Max, Step: attrs.Step,
 			Width: attrs.Width, HandleInset: r,
 		})
+		NextAccessRole("slider")
+		if value != nil {
+			NextAccessValue(fmt.Sprintf("%g", *value))
+		}
+		AssignAccess()
+		if st.HasFocus {
+			ModAttrs(BorderWidth(2), BorderColorVec(FocusRing), Corners(r))
+		}
 		// Track (full width visual bar).
 		Element(Attrs(CrossMid, MinSize(attrs.Width, barHeight), BackgroundVec(accent), Corners(barHeight/2)))
 		// Handle (ClickThrough so drag is owned by the outer process box).

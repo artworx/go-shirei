@@ -108,14 +108,15 @@ Icon(...) // children only after attrs are settled
 
 ## 2. Warm-up: a flat custom button
 
-Buttons are the easiest place to learn the model. Interaction is just
-pointer press/release; you draw everything yourself.
+Buttons are the easiest place to learn the model. Interaction is pointer
+press/release plus keyboard (the box is Focusable; Space/Enter are Active
+while held and Clicked on release). You draw everything yourself.
 
 ### What the library provides
 
 ```go
 st := ProcessButtonEvents(disabled bool) ButtonState
-// st.Hovered, st.Active, st.Clicked, st.Disabled, st.Local
+// st.Hovered, st.Active, st.Clicked, st.Disabled, st.HasFocus, st.Local
 ```
 
 That is the whole interaction contract for a clickable box. Default
@@ -146,6 +147,9 @@ func sendCircle(disabled bool) bool {
         if st.Active && !disabled {
             ModAttrs(Background(220, 55, 42, 1))
         }
+        if st.HasFocus && !disabled {
+            ModAttrs(BorderWidth(2), BorderColor(0, 0, 100, 0.9))
+        }
         Icon(TypArrowUp, FontSize(18), TextColor(0, 0, 100, 1))
     })
     return clicked
@@ -155,7 +159,9 @@ func sendCircle(disabled bool) bool {
 **What to notice:**
 
 - The **circle is your container** — size, corners, fill are presentation.
-- **Process** only answers “what is the pointer doing to *this* box?”
+- **Process** answers pointer and keyboard interaction for *this* box
+  (`Clicked` covers press-release, Space, and Enter; `HasFocus` is the
+  ring).
 - Disable by passing `true` when there is nothing to send; process will not
   report a click.
 

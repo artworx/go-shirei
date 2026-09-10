@@ -36,6 +36,12 @@ func CheckBoxExt(target *bool, label string, attrs CheckBoxAttrs) {
 
 	Container(Attrs(Row, Gap(gap), CrossMid), func() {
 		st := ProcessToggleEvents(target, false)
+		NextAccessRole("checkbox")
+		NextAccessChecked(*target)
+		AssignAccess()
+		if st.HasFocus {
+			ModAttrs(BorderWidth(2), BorderColorVec(FocusRing), Corners(3))
+		}
 
 		boxBG := Vec4{0, 0, 100, 1}
 		grad := Vec4{0, 0, -12, 0}
@@ -73,10 +79,45 @@ type OptionButtonAttrs struct {
 	Size   f32  // circle diameter; zero value: 18
 }
 
-// OptionButton is a radio button: a completed click sets *target to this
-// button's value. Several sharing one target are mutually exclusive.
-func OptionButton[T comparable](target *T, label string, value T) {
-	OptionButtonExt(target, label, value, OptionButtonAttrs{})
+var currentOptionGroup any
+
+type optionGroupRun[T comparable] struct {
+	target *T
+}
+
+// OptionGroup is a mutually exclusive set of OptionButton calls bound to
+// *target. The group container is the access parent (role radiogroup).
+//
+//	NextAccessName("mood")
+//	OptionGroup(&mood, func() {
+//	    NextAccessName("great")
+//	    OptionButton("Great", "great")
+//	})
+func OptionGroup[T comparable](target *T, body func()) {
+	prev := currentOptionGroup
+	currentOptionGroup = &optionGroupRun[T]{target: target}
+	defer func() { currentOptionGroup = prev }()
+	Container(Attrs(), func() {
+		NextAccessRole("radiogroup")
+		AssignAccess()
+		if body != nil {
+			body()
+		}
+	})
+}
+
+func optionGroupTarget[T comparable]() *T {
+	run, ok := currentOptionGroup.(*optionGroupRun[T])
+	if !ok || run == nil || run.target == nil {
+		panic("widgets: OptionButton must be called from OptionGroup")
+	}
+	return run.target
+}
+
+// OptionButton is a radio button inside OptionGroup: a completed click sets
+// the group's target to this button's value.
+func OptionButton[T comparable](label string, value T) {
+	OptionButtonExt(optionGroupTarget[T](), label, value, OptionButtonAttrs{})
 }
 
 // OptionButtonExt is OptionButton with a per-instance accent/size, the same
@@ -98,6 +139,12 @@ func OptionButtonExt[T comparable](target *T, label string, value T, attrs Optio
 			*target = value
 		}
 		selected := *target == value
+		NextAccessRole("radio")
+		NextAccessChecked(selected)
+		AssignAccess()
+		if st.HasFocus {
+			ModAttrs(BorderWidth(2), BorderColorVec(FocusRing), Corners(3))
+		}
 
 		ringBG := Vec4{0, 0, 100, 1}
 		if st.Hovered {
@@ -150,9 +197,13 @@ func ToggleSwitchExt(on *bool, attrs ToggleSwitchAttrs) {
 
 	Container(Attrs(Row, FixSize(width, attrs.Height), Corners(attrs.Height/2), Pad(margin), CrossAlign(AlignMiddle)), func() {
 		st := ProcessToggleEvents(on, false)
+		NextAccessRole("switch")
+		NextAccessChecked(*on)
+		AssignAccess()
 
 		trackBG := Vec4{0, 0, 88, 1}
 		trackBorder := Vec4{0, 0, 75, 1}
+		borderWidth := f32(1)
 		var grad Vec4
 		if st.Hovered {
 			trackBG[2] -= 3
@@ -165,7 +216,11 @@ func ToggleSwitchExt(on *bool, attrs ToggleSwitchAttrs) {
 				trackBG[2] += 4
 			}
 		}
-		ModAttrs(BackgroundVec(trackBG), GradVec(grad), BorderColor(trackBorder[0], trackBorder[1], trackBorder[2], trackBorder[3]), BorderWidth(1))
+		if st.HasFocus {
+			borderWidth = 2
+			trackBorder = FocusRing
+		}
+		ModAttrs(BackgroundVec(trackBG), GradVec(grad), BorderColor(trackBorder[0], trackBorder[1], trackBorder[2], trackBorder[3]), BorderWidth(borderWidth))
 
 		if *on {
 			// spacer to push the knob to the right

@@ -706,6 +706,26 @@ func _VirtualListTakeScrollToIndex(listKey any) (vlistToIndex, bool) {
 	return TakeCommand[vlistToIndex](vlistWidget, listKey, vlistScrollToIndex)
 }
 
+const vlistScrollTo = "scroll-to"
+
+// VirtualListView_ScrollTo asks the list to set its vertical scroll to offset
+// pixels (clamped) on its next render. Pair with OutScrollOffset to
+// save/restore a fixed-height list (Table). Prefer ScrollToIndex when row
+// heights vary. Last request wins among scroll commands that frame.
+func VirtualListView_ScrollTo(listKey any, offset f32) {
+	if listKey == nil {
+		return
+	}
+	PostCommand(vlistWidget, listKey, vlistScrollTo, offset)
+}
+
+func _VirtualListTakeScrollTo(listKey any) (f32, bool) {
+	if listKey == nil {
+		return 0, false
+	}
+	return TakeCommand[f32](vlistWidget, listKey, vlistScrollTo)
+}
+
 // VirtualListView renders a scrolling list whose items may have different
 // heights, laying out only the visible rows. key is forwarded to
 // ContainerWithKey (nil = anonymous positional identity) and is the address that
@@ -795,6 +815,10 @@ func VirtualListViewExt(key any, attrs VirtualListAttrs) {
 		toIndex     int
 		toIndexFrac f32
 		hasToIndex  bool
+
+		// VirtualListView_ScrollTo: pixel offset restore (fixed-height lists).
+		toOffset    f32
+		hasToOffset bool
 
 		// Learned content-end floor: max of the average-height estimate and
 		// extents measured while scrolling / ScrollToEnd. Average-height
@@ -968,12 +992,20 @@ func VirtualListViewExt(key any, attrs VirtualListAttrs) {
 			state.endMargin = max(0, margin)
 			state.toEnd = true
 			state.hasToIndex = false
+			state.hasToOffset = false
 		}
 		if cmd, ok := _VirtualListTakeScrollToIndex(key); ok {
 			state.toIndex = cmd.Index
 			state.toIndexFrac = cmd.Frac
 			state.hasToIndex = true
 			state.toEnd = false
+			state.hasToOffset = false
+		}
+		if off, ok := _VirtualListTakeScrollTo(key); ok {
+			state.toOffset = off
+			state.hasToOffset = true
+			state.toEnd = false
+			state.hasToIndex = false
 		}
 		// ScrollToEnd is applied after width is known (needs a real tail measure).
 		if state.toEnd {
@@ -987,6 +1019,9 @@ func VirtualListViewExt(key any, attrs VirtualListAttrs) {
 		// ScrollToIndex: keep requesting frames until width is known so a
 		// tab-restore command is not lost on the first empty pass.
 		if state.hasToIndex && GetRenderData().ContentSize[1] == 0 && itemCount > 0 {
+			RequestNextFrame()
+		}
+		if state.hasToOffset && GetRenderData().ContentSize[1] == 0 && itemCount > 0 {
 			RequestNextFrame()
 		}
 
@@ -1101,6 +1136,24 @@ func VirtualListViewExt(key any, attrs VirtualListAttrs) {
 			// Seed anchor at the target so the visible walk starts coherently.
 			state.Anchor = ItemOffset{Index: targetIndex, Offset: max(0, top)}
 			state.ScrollOffset = scroll[1]
+		}
+
+		if state.hasToOffset {
+			if itemCount <= 0 {
+				state.hasToOffset = false
+				SetScrollOffset(Vec2{})
+				state.ScrollOffset = 0
+				state.Anchor = ItemOffset{}
+			} else {
+				maxOff := max(0, state.TotalHeight-size[1])
+				target := max(f32(0), min(state.toOffset, maxOff))
+				SetScrollOffset(Vec2{0, target})
+				RequestNextFrame()
+				scroll = GetScrollOffset()
+				state.ScrollOffset = scroll[1]
+				state.Anchor = anchorFromOffset(width, avgHeight, state.ScrollOffset)
+				state.hasToOffset = false
+			}
 		}
 
 		// consume a scroll-into-view command, if one is addressed at us

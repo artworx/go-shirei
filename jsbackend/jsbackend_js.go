@@ -1,8 +1,8 @@
 //go:build js
 
 // Package jsbackend is the browser/wasm shell for shirei. The page owns the
-// event loop (requestAnimationFrame); all rasterization is shirei's software
-// renderer into an RGBA buffer (Host.PixelOrder) for canvas ImageData.
+// event loop (requestAnimationFrame). Present is GLES/WebGL2 via gpurender
+// unless SHIREI_GPU=0 or WebGL2 init fails; then SoftRenderer + putImageData.
 //
 // Text uses the same pure-Go shaping/glyph path as every other backend. The
 // shell embeds a default Noto Sans face so demos render without a system font
@@ -11,6 +11,7 @@
 package jsbackend
 
 import (
+	"os"
 	"strconv"
 	"strings"
 	"syscall/js"
@@ -18,7 +19,9 @@ import (
 
 	_ "embed"
 
+	"go.hasen.dev/generic"
 	"go.hasen.dev/shirei"
+	"go.hasen.dev/shirei/gpurender"
 )
 
 //go:embed NotoSans-Regular.ttf
@@ -37,9 +40,11 @@ var (
 	frameFn       shirei.FrameFn
 
 	softRenderer shirei.SoftRenderer
-	pix          []byte // Host.PixelOrderRGBA framebuffer
+	pix          []byte // Host.PixelOrderRGBA framebuffer (software path)
 	bufW, bufH   int
 	havePainted  bool
+	gpuOK        bool
+	ctx2d        js.Value
 
 	// input is the pure state machine; DOM listeners only feed it.
 	input *inputAccum
@@ -48,7 +53,8 @@ var (
 	pastePending   bool
 
 	// keep rAF Func alive so GC does not free the callback
-	rafCB js.Func
+	rafCB      js.Func
+	pagehideCB js.Func
 )
 
 // SetupWindow records title and preferred CSS-pixel content size (same contract
@@ -104,7 +110,10 @@ func Run(fn shirei.FrameFn) {
 	}
 
 	canvas := ensureShell(doc)
-	ctx2d := canvas.Call("getContext", "2d", map[string]any{"alpha": false})
+	tryGPU(canvas)
+	if !gpuOK {
+		ctx2d = canvas.Call("getContext", "2d", map[string]any{"alpha": false})
+	}
 	installInput(doc, canvas)
 	installTextField(doc)
 
@@ -127,10 +136,21 @@ func Run(fn shirei.FrameFn) {
 
 	rafCB = js.FuncOf(func(this js.Value, args []js.Value) any {
 		defer js.Global().Call("requestAnimationFrame", rafCB)
-		tick(canvas, ctx2d)
+		tick(canvas)
 		return nil
 	})
 	js.Global().Call("requestAnimationFrame", rafCB)
+
+	// Tab close / navigation: flush AddExitCleanup. Skip bfcache (persisted)
+	// so hiding the page does not kill the wasm instance.
+	pagehideCB = js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) > 0 && args[0].Get("persisted").Bool() {
+			return nil
+		}
+		generic.ExitWithCleanup(0)
+		return nil
+	})
+	js.Global().Call("addEventListener", "pagehide", pagehideCB)
 
 	// Park the main goroutine; rAF drives everything else.
 	select {}
@@ -575,7 +595,64 @@ func browserHostIsApple() bool {
 		strings.Contains(ua, "ipad")
 }
 
-func tick(canvas, ctx2d js.Value) {
+func gpuForcedOff() bool {
+	if generic.EnvFalsy("SHIREI_GPU") {
+		return true
+	}
+	if g := js.Global().Get("SHIREI_GPU"); g.Truthy() && g.Type() != js.TypeUndefined {
+		s := strings.ToLower(g.String())
+		if s == "0" || s == "false" || s == "off" || s == "no" {
+			return true
+		}
+	}
+	if loc := js.Global().Get("location"); loc.Truthy() {
+		q := strings.ToLower(loc.Get("search").String())
+		if strings.Contains(q, "shirei_gpu=0") {
+			return true
+		}
+	}
+	return false
+}
+
+func tryGPU(canvas js.Value) {
+	mark := func(v string) { canvas.Call("setAttribute", "data-shirei-gpu", v) }
+	if gpuForcedOff() {
+		mark("off")
+		return
+	}
+	attrs := map[string]any{
+		"alpha":                 false,
+		"antialias":             false,
+		"depth":                 false,
+		"stencil":               false,
+		"premultipliedAlpha":    true,
+		"preserveDrawingBuffer": false,
+		"powerPreference":       "low-power",
+	}
+	gl := canvas.Call("getContext", "webgl2", attrs)
+	if !gl.Truthy() {
+		// Some browsers reject a context-attribute combo; try the default.
+		gl = canvas.Call("getContext", "webgl2")
+	}
+	if !gl.Truthy() {
+		mark("no-webgl2")
+		return
+	}
+	if err := gpurender.BindCanvas(gl); err != nil {
+		js.Global().Get("console").Call("error", "gpurender: fallback to software: "+err.Error())
+		mark("err:" + err.Error())
+		if ext := gl.Call("getExtension", "WEBGL_lose_context"); ext.Truthy() {
+			ext.Call("loseContext")
+		}
+		return
+	}
+	gpuOK = true
+	name := gpurender.DeviceName()
+	js.Global().Get("console").Call("log", "gpurender: "+name)
+	mark(name)
+}
+
+func tick(canvas js.Value) {
 	cssW := canvas.Get("clientWidth").Int()
 	cssH := canvas.Get("clientHeight").Int()
 	if cssW <= 0 || cssH <= 0 {
@@ -606,11 +683,12 @@ func tick(canvas, ctx2d js.Value) {
 		canvas.Set("width", devW)
 		canvas.Set("height", devH)
 		resized = true
-		ensureBuffers(devW, devH)
 	}
-	if len(pix) != devW*devH*4 {
-		ensureBuffers(devW, devH)
-		resized = true
+	if !gpuOK {
+		if len(pix) != devW*devH*4 {
+			ensureBuffers(devW, devH)
+			resized = true
+		}
 	}
 
 	host := shirei.GetHost()
@@ -672,7 +750,21 @@ func tick(canvas, ctx2d js.Value) {
 		return
 	}
 
-	softRenderer.RenderInto(pix, bufW*4, bufW, bufH, float32(dpr), out.Surfaces)
+	if gpuOK {
+		err := gpurender.Render(nil, devW, devH, float32(dpr), out.Surfaces, out.GlyphRuns, out.GlyphsAdded, out.GlyphsEvicted, false)
+		if err != nil {
+			js.Global().Get("console").Call("error", "gpurender: "+err.Error())
+			return
+		}
+		havePainted = true
+		t := &shirei.ActiveUI().FrameTimings
+		t.Painted = true
+		t.PaintEnd = time.Now()
+		shirei.EmitFrameMetrics()
+		return
+	}
+
+	softRenderer.RenderInto(pix, bufW*4, bufW, bufH, float32(dpr), out.Surfaces, out.GlyphRuns)
 	// One browser-managed copy: RGBA is already canvas order (no Go swizzle).
 	// Opaque window: force A=255 so putImageData does not blend with the page.
 	for i := 3; i < len(pix); i += 4 {

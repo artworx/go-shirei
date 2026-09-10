@@ -101,6 +101,7 @@ go run ./demos/layout-shell/step01
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 
@@ -112,8 +113,10 @@ import (
 const winW, winH = 1100, 720
 
 func main() {
-	if len(os.Args) >= 3 && os.Args[1] == "--png" {
-		if err := RenderToPNG(os.Args[2], winW, winH, frame); err != nil {
+	png := flag.String("png", "", "write one settled frame to PATH and exit")
+	flag.Parse()
+	if *png != "" {
+		if err := RenderToPNG(*png, winW, winH, frame); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}

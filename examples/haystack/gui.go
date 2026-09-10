@@ -71,7 +71,8 @@ func RootView() {
 		Container(Attrs(Grow(1), Expand, Clip), func() {
 			ResultsList(appData.active)
 		})
-		ProfileButton("haystack") // floating profiler toggle when DEBUG=1
+		ProfileButton("haystack") // floating profiler toggle when SHIREI_PPROF=1
+		FPSCounter()
 	})
 }
 

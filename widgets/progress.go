@@ -1,6 +1,8 @@
 package widgets
 
 import (
+	"fmt"
+
 	"go.hasen.dev/generic"
 
 	. "go.hasen.dev/shirei"
@@ -44,6 +46,9 @@ func ProgressBarExt(frac f32, attrs ProgressBarAttrs) {
 	corners := h * 0.5
 
 	Container(Attrs(Row, CrossMid, Gap(6)), func() {
+		NextAccessRole("progressbar")
+		NextAccessValue(fmt.Sprintf("%g", frac))
+		AssignAccess()
 		Container(Attrs(FixWidth(w), FixHeight(h), Corners(corners), BackgroundVec(track), NoAnimate, Clip), func() {
 			Element(Attrs(FixWidth(w*frac), FixHeight(h), BackgroundVec(fill), NoAnimate))
 		})

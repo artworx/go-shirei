@@ -131,6 +131,7 @@ func RootView() {
 	diffFindFocused = false
 	histFindFocused = false
 	ProfileButton("git_history")
+	FPSCounter()
 	Container(Attrs(Viewport, Background(220, 12, 96, 1)), func() {
 		TabBar()
 		if t != nil {
@@ -190,8 +191,10 @@ func StatusBar(t *RepoTab) {
 // TabBar is a horizontal strip of open repos + a special "New" tab-like button.
 func TabBar() {
 	var closeReq *RepoTab
+	NextAccessName("top_bar")
 	Container(Attrs(Row, Extrinsic, Clip, Expand, CrossMid, Gap(6), FixHeight(40), Pad2(6, 10),
 		Background(220, 12, 84, 1), BorderColor(0, 0, 75, 1), BorderWidth(1)), func() {
+		AssignAccess()
 		ScrollOnInput()
 		ScrollBars()
 		for _, tab := range appData.tabs {
@@ -203,7 +206,10 @@ func TabBar() {
 		Filler(10)
 
 		// Recents menu (builtin MenuButton + keyboard filter).
+		NextAccessName("recent")
 		MenuButton(MenuIcon, "Recent", func() {
+			NextAccessName("recent_menu")
+			AssignAccess()
 			MenuFilterQuery() // opt into typeahead
 			if len(appData.recents) == 0 {
 				Label("No recent repos", FontSize(11), FontStyle(StyleItalic), TextColor(0, 0, 50, 1))
@@ -222,6 +228,7 @@ func TabBar() {
 		})
 
 		// Open directory browser.
+		NextAccessName("files_browser")
 		if Button(SymFolder, "Open") {
 			openNewRepoBrowser("")
 		}
@@ -300,6 +307,8 @@ func NewRepoBrowser() {
 	}
 
 	Modal(attrs.Width, closeDialog, func() {
+		NextAccessName("file_browser")
+		AssignAccess()
 		// Keep cwd non-empty for FileBrowserPanel.
 		if appData.browseCwd == "" {
 			appData.browseCwd, _ = filepath.Abs(".")
@@ -363,7 +372,9 @@ func RepoTabChrome(t *RepoTab) (closeClicked bool) {
 		if t.listLoading {
 			Label("…", FontSize(11), TextColor(0, 0, 45, 1))
 		}
+		NextAccessName("close")
 		Container(Attrs(Pad(2), Corners(3)), func() {
+			AssignAccess()
 			if IsHovered() {
 				ModAttrs(Background(0, 0, 55, 0.4))
 			}
@@ -403,6 +414,13 @@ func emptyNoTabs() {
 // (n/p), and history Up/Down.
 func handleAppKeys(t *RepoTab) {
 	if handleFindShortcuts(t) {
+		return
+	}
+	// Up/Down and n/p are defaults for the commit/diff view, not hotkeys
+	// that steal from a focused control. Menus live on the popup layer
+	// (after this function), so last frame's focus is the signal — same
+	// idea as findBarFocused.
+	if FocusedId() != nil {
 		return
 	}
 	if handleFileNavKeys(t) {
@@ -1628,7 +1646,7 @@ func imageRowHeight(t *RepoTab, path string, width f32) f32 {
 
 func diffRowTextStyle(r DiffRow) TextStyleAttrs {
 	st := DefaultTextStyle()
-	st.FontFamilies = append([]string{}, Monospace...)
+	st.SetFontFamilies(Monospace...)
 	switch r.Kind {
 	case RowFileHeader:
 		st.FontSize = 12

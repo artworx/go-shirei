@@ -11,6 +11,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"time"
@@ -87,8 +88,10 @@ func init() {
 }
 
 func main() {
-	if len(os.Args) >= 3 && os.Args[1] == "--png" {
-		if err := RenderToPNG(os.Args[2], winW, winH, frame); err != nil {
+	png := flag.String("png", "", "write one settled frame to PATH and exit")
+	flag.Parse()
+	if *png != "" {
+		if err := RenderToPNG(*png, winW, winH, frame); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -280,6 +283,9 @@ func chatCompose(draft *string, messages *[]msg, textPrim float32) {
 				}
 				if bst.Active && canSend {
 					ModAttrs(Background(accentH, 55, 42, 1))
+				}
+				if bst.HasFocus && canSend {
+					ModAttrs(BorderWidth(2), BorderColor(0, 0, 100, 0.9))
 				}
 				// Icon: arrow-up as a compact "send" affordance.
 				Icon(TypArrowUp, FontSize(18), TextColor(0, 0, 100, 1))

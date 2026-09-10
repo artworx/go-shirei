@@ -204,9 +204,9 @@ func ensureVisible(rowId ContainerId) {
 	if vp.ResolvedSize[1] <= 0 || item.ResolvedSize[1] <= 0 {
 		return
 	}
-	top := item.ResolvedOrigin[1] - vp.ResolvedOrigin[1] + vp.ScrollOffset[1]
+	offset := GetScrollOffsetOf(CurrentId())
+	top := item.ResolvedOrigin[1] - vp.ResolvedOrigin[1] + offset[1]
 	bottom := top + item.ResolvedSize[1]
-	offset := vp.ScrollOffset
 	if top < offset[1] {
 		offset[1] = top
 	} else if bottom > offset[1]+vp.ResolvedSize[1] {

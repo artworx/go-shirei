@@ -1107,6 +1107,9 @@ func TextInputExt(buf *string, attrs TextInputAttrs) {
 			}
 		}
 		st := ProcessTextInput(buf, raw)
+		NextAccessRole("text")
+		NextAccessValue(*buf)
+		AssignAccess()
 		if st.HasFocus {
 			ModAttrs(BorderColor(0, 0, 0, 0.30))
 		} else {
@@ -1181,7 +1184,6 @@ func ProcessTextInput(buf *string, cfg TextInputConfig) TextInputState {
 		AutoFocus()
 	}
 	FocusOnClick()
-	CycleFocusOnTab()
 
 	// Capture for drag-select; PressAction sets active on this container.
 	st.Hovered = IsHovered()
