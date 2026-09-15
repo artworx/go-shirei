@@ -903,7 +903,8 @@ object-derived caches in `UseData`.
 ### Layout queries and multipass settle
 
 Builders run *before* this frame's layout is fully committed, so every
-geometry query — `GetResolvedSize`, `GetContentRect`, `GetScreenRect`, and
+geometry query — `GetResolvedWidth`, `GetResolvedHeight`, `GetResolvedSize`,
+`GetContentRect`, `GetScreenRect`, and
 the `...Of(id)` variants like `GetScreenRectOf(id)` — answers from the
 **previous layout pass**. For a brand-new container that has never been
 laid out, that answer is zero until a pass has produced real sizes.
@@ -920,14 +921,35 @@ sibling geometry” layouts. In practice the runtime handles the common case:
 
 ```go
 // Split by ratio of the current container's resolved height.
-// On the first pass GetResolvedSize may be zero; the settle pass re-runs
+// On the first pass GetResolvedHeight may be zero; the settle pass re-runs
 // the builder once sizes exist — no RequestNextFrame required for that.
-totalHeight := GetResolvedSize()[1]
+totalHeight := GetResolvedHeight()
 topAttrs := Attrs(Expand, Clip)
 if totalHeight > 0 {
     topAttrs = Attrs(FixHeight(totalHeight*splitRatio), Expand, Clip)
 }
 ```
+
+Use the scalar query that describes the dependency:
+
+| Query | Dimension tracked |
+| --- | --- |
+| `GetResolvedWidth()` | Outer width |
+| `GetResolvedHeight()` | Outer height |
+| `GetContentWidth()` | Outer width minus horizontal padding |
+| `GetContentHeight()` | Outer height minus vertical padding |
+
+A width-only query does not request settling when only height changes, and
+vice versa. Content queries also detect padding changes, even if the outer
+box is unchanged. Content width/height describe the available area inside
+padding, not the extent of overflowing children (`RenderData.ContentSize`).
+`GetResolvedSize()` and `GetAvailableSize()` track both dimensions. Indexing
+one component of their returned vector still registers both; use a scalar
+getter when the build needs only one axis.
+
+Multiple queries on a node accumulate for the current pass. Queries in later
+passes establish fresh dependencies. Size and padding animation progress do
+not trigger extra settling when their layout targets are unchanged.
 
 A few nuances:
 
@@ -941,7 +963,7 @@ A few nuances:
   is why goldens are stable without manual multipass in app code.
 
 See `examples/see_pprof` (`MainContent`) for a real split pane that reads
-`GetResolvedSize` while building.
+`GetResolvedHeight` while building.
 
 ### Animation: on by default
 

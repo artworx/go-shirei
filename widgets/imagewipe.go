@@ -54,7 +54,7 @@ type ImageWipeAttrs struct {
 
 	// MaxSize is an optional max box for the wipe plane (same rule as ImageView:
 	// never enlarge). Displayed size is RestrictedSize of the image content
-	// into this box. Zero width → GetAvailableSize().x (caller should pass a
+	// into this box. Zero width → GetContentWidth() (caller should pass a
 	// real pane width from an Extrinsic parent). Zero height → no height cap.
 	// If neither image has dimensions yet, a small placeholder is used.
 	//
@@ -87,8 +87,8 @@ func ImageWipe(attrs ImageWipeAttrs) {
 	// Base = image pixels. Cap = MaxSize (width-only when MaxSize.y == 0).
 	maxW, maxH := attrs.MaxSize[0], attrs.MaxSize[1]
 	if maxW < 1 {
-		if avail := GetAvailableSize(); avail[0] > 1 {
-			maxW = avail[0]
+		if w := GetContentWidth(); w > 1 {
+			maxW = w
 		}
 	}
 	if maxW < 1 {

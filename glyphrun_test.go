@@ -64,6 +64,9 @@ func TestLabelEmitsGlyphRuns(t *testing.T) {
 	var runSurfaces, runGlyphs int
 	for _, s := range out.Surfaces {
 		if s.GlyphRunCount > 0 {
+			if s.GlyphData == nil || s.GlyphData.Len() != int(s.GlyphRunCount) {
+				t.Fatal("label must retain its immutable glyph geometry")
+			}
 			runSurfaces++
 			runGlyphs += int(s.GlyphRunCount)
 			if s.FontId != 0 || s.GlyphId != 0 {
@@ -77,8 +80,8 @@ func TestLabelEmitsGlyphRuns(t *testing.T) {
 	if runGlyphs < 4 {
 		t.Fatalf("run glyphs=%d want at least 4 for Hello", runGlyphs)
 	}
-	if len(out.GlyphRuns) < runGlyphs {
-		t.Fatalf("GlyphRuns=%d < counted %d", len(out.GlyphRuns), runGlyphs)
+	if len(out.GlyphRuns) != 0 {
+		t.Fatalf("label copies %d glyph records into the frame", len(out.GlyphRuns))
 	}
 }
 
@@ -112,9 +115,8 @@ func TestGlyphRunRenderMatchesExpandedSurfaces(t *testing.T) {
 			flat = append(flat, s)
 			continue
 		}
-		span := out.GlyphRuns[s.GlyphRunFirst : s.GlyphRunFirst+s.GlyphRunCount]
-		for j := range span {
-			g := &span[j]
+		for j := 0; j < int(s.GlyphRunCount); j++ {
+			g := s.GlyphRunAt(j, out.GlyphRuns)
 			flat = append(flat, Surface{
 				Rect:        g.Rect,
 				Color1:      g.Color,

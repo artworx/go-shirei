@@ -96,12 +96,15 @@ func TestShapeCacheStampsDoNotLeakColor(t *testing.T) {
 		})
 	}
 	var sawRed, sawBlue bool
-	for _, g := range out.GlyphRuns {
-		if g.Color == red {
-			sawRed = true
-		}
-		if g.Color == blue {
-			sawBlue = true
+	for _, s := range out.Surfaces {
+		for i := 0; i < int(s.GlyphRunCount); i++ {
+			g := s.GlyphRunAt(i, out.GlyphRuns)
+			if g.Color == red {
+				sawRed = true
+			}
+			if g.Color == blue {
+				sawBlue = true
+			}
 		}
 	}
 	if !sawRed || !sawBlue {

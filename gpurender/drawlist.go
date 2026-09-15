@@ -214,12 +214,10 @@ func (b *builder) emitFill(s *shirei.Surface) {
 }
 
 func (b *builder) emitGlyphRun(s *shirei.Surface) {
-	first := int(s.GlyphRunFirst)
 	n := int(s.GlyphRunCount)
-	span := b.glyphRuns[first : first+n]
 	var tmp shirei.Surface
-	for i := range span {
-		g := &span[i]
+	for i := 0; i < n; i++ {
+		g := s.GlyphRunAt(i, b.glyphRuns)
 		tmp = shirei.Surface{
 			Rect:        g.Rect,
 			Color1:      g.Color,

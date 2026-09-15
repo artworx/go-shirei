@@ -791,7 +791,7 @@ func ScanResultPanel() {
 
 					// progress bar
 					Container(Attrs(NoAnimate, Expand), func() {
-						width := GetResolvedSize()[0]
+						width := GetResolvedWidth()
 						if width == 0 {
 							return
 						}
@@ -870,7 +870,7 @@ func ScanResultPanel() {
 								// show a progress bar per directory
 								// disabling because it does not seem to work well ..
 								if false {
-									width := GetResolvedSize()[0]
+									width := GetResolvedWidth()
 									// thin proggress border!!! (floats so we can resize)
 									progress := ZeroIfNaN(f32(entry.subDone) / f32(entry.subCount))
 									Element(Attrs(Float(0, 1), InFront, FixWidth(width*(progress)), FixHeight(2), Background(240, 100, 60, 1)))

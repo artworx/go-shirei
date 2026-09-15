@@ -92,8 +92,8 @@ func ProcessSlider(value *float32, cfg SliderConfig) SliderState {
 
 	width := cfg.Width
 	if width <= 0 {
-		if sz := GetResolvedSize(); sz[0] > 1 {
-			width = sz[0]
+		if w := GetResolvedWidth(); w > 1 {
+			width = w
 		} else if sz := GetScreenRect().Size; sz[0] > 1 {
 			width = sz[0]
 		} else {

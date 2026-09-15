@@ -59,8 +59,8 @@ var segOpt = 10
 func RootView() {
 
 	Container(Attrs(Viewport, Background(220, 10, 97, 1), Pad(30), Gap(20)), func() {
-		rect := GetContentRect()
-		Container(Attrs(Row, Wrap, CrossMid, Gap(14), MaxWidth(rect.Size[0])), func() {
+		width := GetContentWidth()
+		Container(Attrs(Row, Wrap, CrossMid, Gap(14), MaxWidth(width)), func() {
 			NextAccessName("btn_lightsteel")
 			ButtonWithAccent(NoIcon, "LightSteel", AccentLightSteel)
 			NextAccessName("btn_slateblue")

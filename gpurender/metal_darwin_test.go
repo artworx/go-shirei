@@ -3,11 +3,90 @@
 package gpurender
 
 import (
+	"bytes"
 	"image"
 	"testing"
+	"unsafe"
 
 	"go.hasen.dev/shirei"
 )
+
+func TestMetalSharedTextMatchesExpandedGlyphs(t *testing.T) {
+	if err := Init(); err != nil {
+		t.Skipf("Metal init: %v", err)
+	}
+	host := shirei.GetHost()
+	oldSize, oldScale, oldBudget := host.WindowSize, host.WindowScale, host.GlyphCacheBudgetBytes
+	defer func() {
+		host.WindowSize, host.WindowScale, host.GlyphCacheBudgetBytes = oldSize, oldScale, oldBudget
+	}()
+	host.WindowSize = shirei.Vec2{240, 140}
+	host.GlyphCacheBudgetBytes = 16 << 20
+	read := func(s unsafe.Pointer, w, h int) []byte {
+		p := uintptr(s)
+		ioSurfaceLock(p, kIOSurfaceLockReadOnly, nil)
+		defer ioSurfaceUnlock(p, kIOSurfaceLockReadOnly, nil)
+		base, stride := ioSurfaceGetBaseAddress(p), ioSurfaceGetBytesPerRow(p)
+		pixels := make([]byte, w*h*4)
+		for y := 0; y < h; y++ {
+			copy(pixels[y*w*4:(y+1)*w*4], unsafe.Slice((*byte)(unsafe.Pointer(base+uintptr(y)*stride)), w*4))
+		}
+		return pixels
+	}
+	for _, scale := range []float32{1, 2} {
+		host.WindowScale = scale
+		w, h := int(240*scale), int(140*scale)
+		sharedTarget, flatTarget := testSurface(w, h), testSurface(w, h)
+		if sharedTarget == nil || flatTarget == nil {
+			t.Fatal("test IOSurface is nil")
+		}
+		defer testRelease(sharedTarget)
+		defer testRelease(flatTarget)
+		for _, hue := range []float32{0, 210, 0} {
+			var out shirei.FrameOutputData
+			for range 3 {
+				out = shirei.RunFrameFn(func() {
+					shirei.ModAttrs(shirei.NoAnimate)
+					shirei.Container(shirei.Attrs(shirei.Pad(8), shirei.MaxWidth(190), shirei.Clip), func() {
+						shirei.Label("office العربية", shirei.TextColor(hue, 80, 40, 1))
+						style := shirei.TextStyle()
+						shirei.Text("Mixed sizes and colors", style,
+							shirei.Span(0, 5, shirei.FontSize(22)),
+							shirei.Span(6, 11, shirei.TextColor(hue, 80, 40, 1)))
+						shaped := shirei.ShapeTextMax("Selection with wrapped words across several lines", style, 160)
+						shirei.ShapedTextLayout(shaped, style, 4, 20)
+					})
+				})
+			}
+			var flat []shirei.Surface
+			glyphs := 0
+			for _, surface := range out.Surfaces {
+				if surface.GlyphRunCount == 0 {
+					flat = append(flat, surface)
+					continue
+				}
+				for i := 0; i < int(surface.GlyphRunCount); i++ {
+					g := surface.GlyphRunAt(i, out.GlyphRuns)
+					flat = append(flat, shirei.Surface{Rect: g.Rect, Color1: g.Color, Color2: g.Color,
+						FontId: g.FontId, GlyphId: g.GlyphId, GlyphOffset: g.GlyphOffset})
+					glyphs++
+				}
+			}
+			if glyphs < 20 {
+				t.Fatal("text fixture did not emit enough glyphs")
+			}
+			if err := Render(sharedTarget, w, h, scale, out.Surfaces, out.GlyphRuns, out.GlyphsAdded, out.GlyphsEvicted, true); err != nil {
+				t.Fatal(err)
+			}
+			if err := Render(flatTarget, w, h, scale, flat, nil, nil, nil, true); err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(read(sharedTarget, w, h), read(flatTarget, w, h)) {
+				t.Fatalf("Metal text differs at scale=%v hue=%v", scale, hue)
+			}
+		}
+	}
+}
 
 func TestMetalTopLeftFill(t *testing.T) {
 	if err := Init(); err != nil {

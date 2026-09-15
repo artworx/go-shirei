@@ -84,13 +84,14 @@ type identNode struct {
 	// data is a discarded settle pass — see runFirstFrame).
 	bornFrame int64
 
-	// layoutSize is the pre-animation resolved size from the last pass that
-	// laid this node out (see commitLayoutSizeAndDetectStale). Distinct from
-	// rd.ResolvedSize, which may be mid-ease under AnimSize. geometryQueryFrame
-	// stamps the pass that hit a public geometry accessor on this node.
+	// Layout targets exclude size/padding animation. Query masks accumulate
+	// the outer/content dimensions read during one pass; other dimensions
+	// cannot request a settle. The frame stamp scopes both mask and targets.
 	layoutSize         Vec2
+	layoutContentSize  Vec2
 	layoutSizeFrame    int64
 	geometryQueryFrame int64
+	geometryQueryMask  geometryQuery
 
 	// stage 3: UI hook state (Use/UseWithInit) lives on its node, keyed by
 	// the hook's itemKey. Retention is prune-per-frame, matching the old
@@ -243,11 +244,21 @@ func (n *identNode) prevRenderData() (RenderData, bool) {
 	return n.rd, true
 }
 
-// queriedRenderData is prevRenderData for the public geometry accessors:
-// a miss flags the frame as incomplete. A hit stamps geometryQueryFrame so
-// commitLayoutSizeAndDetectStale can settle when the layout target moved
-// under a still-valid previous-frame answer (resize / reflow), without
-// treating AnimSize easing as instability.
+type geometryQuery uint8
+
+const (
+	queryWidth geometryQuery = 1 << iota
+	queryHeight
+	queryContentWidth
+	queryContentHeight
+	queryResolvedSize = queryWidth | queryHeight
+	queryContentSize  = queryContentWidth | queryContentHeight
+)
+
+// queriedRenderData reads last-pass geometry and records the dimensions used.
+// A miss flags the frame as incomplete. Hits accumulate a query mask for this
+// pass, so target changes settle only the dimensions read by its callers.
+// Target comparison excludes size/padding animation.
 //
 // Internal callers (animation sources, ScrollOnInput) keep using
 // prevRenderData directly — for them absence is a normal state, not an
@@ -257,13 +268,17 @@ func (n *identNode) prevRenderData() (RenderData, bool) {
 // reach it), so requesting a settle pass for it would put the frame loop
 // in a permanent two-passes-per-frame regime. Its queries just answer
 // zeros, like a nil handle.
-func queriedRenderData(n *identNode) RenderData {
+func queriedRenderData(n *identNode, query geometryQuery) RenderData {
 	rd, ok := n.prevRenderData()
 	if ui.frameInProgress && !n.detached {
 		if !ok {
 			ui.stabilizeRequested = true
 		} else {
-			n.geometryQueryFrame = ui.FrameNumber
+			if n.geometryQueryFrame != ui.FrameNumber {
+				n.geometryQueryFrame = ui.FrameNumber
+				n.geometryQueryMask = 0
+			}
+			n.geometryQueryMask |= query
 		}
 	}
 	return rd

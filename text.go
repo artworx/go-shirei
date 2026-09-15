@@ -573,13 +573,26 @@ func ShapedTextLineLayout(line *ShapedTextLine, style TextStyleAttrs, spans []St
 		ui.current.textRunEm = line.maxEm
 		stamps := line.stamps
 		if spanRecolors {
-			colored := slices.Clone(line.runs)
-			for i := range colored {
-				colored[i].Color = styleAt(style, spans, int(stamps[i].Cluster)).TextColor
+			var hash xxhash.Digest
+			Hash(&hash, &style.TextColor)
+			for i := range spans {
+				Hash(&hash, &spans[i].From)
+				Hash(&hash, &spans[i].To)
+				Hash(&hash, &spans[i].Style.TextColor)
 			}
-			ui.current.glyphRuns = colored
+			key := coloredGlyphKey{line.runData, hash.Sum64()}
+			data, ok := res.coloredGlyphCache.Get(key)
+			if !ok {
+				colored := slices.Clone(line.runs)
+				for i := range colored {
+					colored[i].Color = styleAt(style, spans, int(stamps[i].Cluster)).TextColor
+				}
+				data = &GlyphRunData{glyphs: colored, hash: xxhash.Sum64(g.UnsafeSliceBytes(colored)), dependencies: line.runData.dependencies}
+				res.coloredGlyphCache.Set(key, data)
+			}
+			ui.current.glyphData = data
 		} else {
-			ui.current.glyphRuns = line.runs
+			ui.current.glyphData = line.runData
 			ui.current.glyphRunColor = style.TextColor
 		}
 
@@ -792,7 +805,7 @@ func shapedTextLayoutFlat(shaped ShapedText, style TextStyleAttrs, selectionFrom
 		Container(blockAttrs, func() {
 			ui.current.textRunWidth = line.Width
 			ui.current.textRunEm = line.maxEm
-			ui.current.glyphRuns = line.runs
+			ui.current.glyphData = line.runData
 			ui.current.glyphRunColor = style.TextColor
 		})
 		return
@@ -1167,6 +1180,7 @@ func lineBreakShapedSegments(allSegments []GlyphsSegment, style TextStyleAttrs, 
 		}
 		line.stamps = stamps
 		line.runs = runs
+		line.runData = ownGlyphRunData(runs)
 		line.maxEm = maxEm
 	}
 
@@ -1214,13 +1228,14 @@ type ShapedTextLine struct {
 	lineEm float32
 	// runs are the line's paint geometry precomputed at shape time:
 	// line-relative GlyphRuns (origin = advance accumulation, zero Color —
-	// the shape-cache key does not include render-tier color). Emission
-	// bulk-copies them and shifts origins. stamps carry the per-glyph
+	// the shape-cache key does not include render-tier color). runData owns
+	// this slice and its cached hash/dependencies. stamps carry the per-glyph
 	// advance + cluster for decoration bands and span/selection mapping.
 	// maxEm is the tallest glyph em — the emitted run surface height.
-	runs   []GlyphRun
-	stamps []glyphStamp
-	maxEm  float32
+	runs    []GlyphRun
+	runData *GlyphRunData
+	stamps  []glyphStamp
+	maxEm   float32
 }
 
 // unwrappedShaped is HarfBuzz output before wrap: segments in logical

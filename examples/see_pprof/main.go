@@ -747,7 +747,7 @@ func MainContent() {
 
 		state := fileView(appData.selected)
 
-		totalHeight := GetResolvedSize()[1]
+		totalHeight := GetResolvedHeight()
 		topAttrs := Attrs(Grow(1), Expand, Clip)
 		bottomAttrs := Attrs(Grow(1), Expand, Clip)
 		if totalHeight > 0 {
@@ -1260,7 +1260,7 @@ func FlameGraphSection(state *FlameState) {
 				focusText = "focused: " + state.focus.Name
 				focusAlpha = 1
 			}
-			Container(Attrs(MaxWidth(GetResolvedSize()[0]), Clip), func() {
+			Container(Attrs(MaxWidth(GetResolvedWidth()), Clip), func() {
 				Label(focusText, FontSize(10), TextColorVec(Vec4{0, 0, 45, focusAlpha}))
 			})
 		})

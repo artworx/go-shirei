@@ -238,7 +238,7 @@ func InspectView() {
 		Header()
 
 		Container(Attrs(Grow(1), Expand, Clip), func() {
-			totalHeight := GetResolvedSize()[1]
+			totalHeight := GetResolvedHeight()
 			topAttrs := Attrs(Grow(1), Expand, Clip)
 			bottomAttrs := Attrs(Grow(1), Expand, Clip)
 			if totalHeight > 0 {
@@ -345,7 +345,7 @@ func Header() {
 		var hovered *barSeg
 		segs := buildSegments()
 		Container(Attrs(Row, Expand, FixHeight(barHeight), Clip), func() {
-			width := GetResolvedSize()[0]
+			width := GetResolvedWidth()
 			if width <= 0 {
 				RequestNextFrame()
 				return

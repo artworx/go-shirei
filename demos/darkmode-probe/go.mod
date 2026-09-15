@@ -3,8 +3,8 @@ module go.hasen.dev/shirei/demos/darkmode-probe
 go 1.25.0
 
 require (
-	go.hasen.dev/shirei v0.6.10
-	go.hasen.dev/shirei/ext/darkmode v0.6.10
+	go.hasen.dev/shirei v0.6.11
+	go.hasen.dev/shirei/ext/darkmode v0.6.11
 )
 
 require (

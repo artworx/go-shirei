@@ -11,7 +11,6 @@
 package jsbackend
 
 import (
-	"os"
 	"strconv"
 	"strings"
 	"syscall/js"
@@ -31,12 +30,18 @@ const glyphCacheBudget = 16 << 20
 
 var (
 	winTitle string
+	prefW    int // SetupWindow content size; not inflated, not live-resized
+	prefH    int
 	winW     int
 	winH     int
 	// shellInflated is set once winH has been grown by titlebarHeight for a
 	// top-level CSD shell (SetupWindow sizes are content; winW/winH track the
 	// full surface after inflate and during interactive resize).
 	shellInflated bool
+	// floatingShell is the live CSD mode: a top-level desktop-sized page with
+	// a fixed SetupWindow. Mobile hosts and short/narrow viewports stay false
+	// so the canvas fills the page (no titlebar).
+	floatingShell bool
 	frameFn       shirei.FrameFn
 
 	softRenderer shirei.SoftRenderer
@@ -55,17 +60,23 @@ var (
 	// keep rAF Func alive so GC does not free the callback
 	rafCB      js.Func
 	pagehideCB js.Func
+	resizeCB   js.Func
 )
 
 // SetupWindow records title and preferred CSS-pixel content size (same contract
-// as macOS/Win32). When a top-level floating shell draws CSD, the #shirei-root
-// surface is taller by titlebarHeight so the app body keeps the requested size.
-// Zero width or height means fill the viewport (fullscreen page / iframe).
+// as macOS/Win32). On a top-level desktop-sized page a floating shell draws CSD
+// and is taller by titlebarHeight so the app body keeps the requested size; it is
+// shrunk if that would overflow the host slot (#shirei-root). Mobile hosts and
+// short/narrow host slots fill that slot with no chrome (same as iOS/Android).
+// Zero width or height also fills the slot (iframe embeds still shrink-wrap to w×h).
 func SetupWindow(title string, width, height int) {
 	winTitle = title
+	prefW = width
+	prefH = height
 	winW = width
 	winH = height
 	shellInflated = false
+	floatingShell = false
 }
 
 // SetupIcon is a no-op for the first cut (favicon can be set in HTML).
@@ -152,13 +163,24 @@ func Run(fn shirei.FrameFn) {
 	})
 	js.Global().Call("addEventListener", "pagehide", pagehideCB)
 
+	// Viewport changes: re-apply layout so a phone rotation or a desktop
+	// window crossing the full-bleed threshold picks the right shell.
+	resizeCB = js.FuncOf(func(this js.Value, args []js.Value) any {
+		doc := js.Global().Get("document")
+		root := doc.Call("getElementById", "shirei-root")
+		applyShellLayout(doc, root, canvas)
+		shirei.RequestNextFrame()
+		return nil
+	})
+	js.Global().Call("addEventListener", "resize", resizeCB)
+
 	// Park the main goroutine; rAF drives everything else.
 	select {}
 }
 
 // ensureShell finds or creates #shirei-root > #shirei-canvas and applies
-// SetupWindow size: fixed CSS px when winW/winH > 0, else viewport fill.
-// Top-level fixed shells are absolutely positioned (move/resize via CSD).
+// SetupWindow size: a clamped floating CSD shell inside the host slot on a
+// top-level desktop-sized page, exact-fit in an iframe, otherwise fill the slot.
 func ensureShell(doc js.Value) js.Value {
 	body := doc.Get("body")
 	if !body.Truthy() {
@@ -217,121 +239,124 @@ func applyShellLayout(doc, root, canvas js.Value) {
 	cs.Set("touchAction", "none")
 	cs.Set("outline", "none")
 
-	fixed := winW > 0 && winH > 0
 	embedded := isEmbeddedFrame()
+	fixed := prefW > 0 && prefH > 0
 
-	if fixed {
-		// Top-level CSD: grow the shell so the titlebar sits outside the
-		// requested content size (iframe embeds keep CSD off — exact fit).
-		if !embedded && !shellInflated {
-			winH += titlebarHeight
-			shellInflated = true
-		}
+	if embedded && fixed {
+		floatingShell = false
+		shellInflated = false
+		winW, winH = prefW, prefH
 		rs.Set("width", strconv.Itoa(winW)+"px")
 		rs.Set("height", strconv.Itoa(winH)+"px")
 		rs.Set("overflow", "hidden")
 		rs.Set("background", "#fff")
-
-		if embedded {
-			// Tight fit so the parent iframe can match SetupWindow exactly.
-			if html.Truthy() {
-				hs := html.Get("style")
-				hs.Set("margin", "0")
-				hs.Set("width", strconv.Itoa(winW)+"px")
-				hs.Set("height", strconv.Itoa(winH)+"px")
-			}
-			if body.Truthy() {
-				bs := body.Get("style")
-				bs.Set("margin", "0")
-				bs.Set("width", strconv.Itoa(winW)+"px")
-				bs.Set("height", strconv.Itoa(winH)+"px")
-				bs.Set("display", "block")
-				bs.Set("overflow", "hidden")
-				bs.Set("background", "#fff")
-			}
-			rs.Set("position", "relative")
-			rs.Set("boxShadow", "none")
-			rs.Set("borderRadius", "0")
-		} else {
-			// Top-level: floating desktop-like surface (CSD drawn in shirei).
-			if html.Truthy() {
-				hs := html.Get("style")
-				hs.Set("margin", "0")
-				hs.Set("height", "100%")
-				hs.Set("width", "100%")
-			}
-			if body.Truthy() {
-				bs := body.Get("style")
-				bs.Set("margin", "0")
-				bs.Set("minHeight", "100%")
-				bs.Set("width", "100%")
-				bs.Set("height", "100%")
-				bs.Set("display", "block")
-				bs.Set("position", "relative")
-				// Light desk behind the floating shell so the drop shadow reads.
-				bs.Set("background", "#e8e8ee")
-				bs.Set("overflow", "hidden")
-			}
-			rs.Set("position", "absolute")
-			// Soft lift + thin edge so the window separates from the page
-			// without a hard dark frame (box-shadow does not shrink layout).
-			rs.Set("boxShadow", "0 0 0 1px rgba(0,0,0,0.12), 0 8px 28px rgba(0,0,0,0.18), 0 2px 6px rgba(0,0,0,0.08)")
-			rs.Set("borderRadius", "6px")
-			rs.Set("boxSizing", "border-box")
-			if !framePlaced {
-				vw := js.Global().Get("innerWidth").Float()
-				vh := js.Global().Get("innerHeight").Float()
-				if vw <= 0 {
-					vw = float64(winW + 40)
-				}
-				if vh <= 0 {
-					vh = float64(winH + 40)
-				}
-				frameLeft = (vw - float64(winW)) / 2
-				frameTop = (vh - float64(winH)) / 2
-				if frameLeft < 8 {
-					frameLeft = 8
-				}
-				if frameTop < 8 {
-					frameTop = 8
-				}
-				framePlaced = true
-			}
-			rs.Set("left", strconv.FormatFloat(frameLeft, 'f', 0, 64)+"px")
-			rs.Set("top", strconv.FormatFloat(frameTop, 'f', 0, 64)+"px")
+		// Tight fit so the parent iframe can match SetupWindow exactly.
+		if html.Truthy() {
+			hs := html.Get("style")
+			hs.Set("margin", "0")
+			hs.Set("width", strconv.Itoa(winW)+"px")
+			hs.Set("height", strconv.Itoa(winH)+"px")
 		}
-
+		if body.Truthy() {
+			bs := body.Get("style")
+			bs.Set("margin", "0")
+			bs.Set("width", strconv.Itoa(winW)+"px")
+			bs.Set("height", strconv.Itoa(winH)+"px")
+			bs.Set("display", "block")
+			bs.Set("overflow", "hidden")
+			bs.Set("background", "#fff")
+		}
+		rs.Set("position", "relative")
+		rs.Set("boxShadow", "none")
+		rs.Set("borderRadius", "0")
+		cs.Set("position", "relative")
+		cs.Set("left", "")
+		cs.Set("top", "")
+		cs.Set("width", "100%")
+		cs.Set("height", "100%")
+		cs.Set("boxShadow", "none")
+		cs.Set("borderRadius", "0")
 		if html.Truthy() {
 			html.Call("setAttribute", "data-shirei-width", strconv.Itoa(winW))
 			html.Call("setAttribute", "data-shirei-height", strconv.Itoa(winH))
 		}
 		notifyParentSize(winW, winH)
-	} else {
-		if html.Truthy() {
-			html.Get("style").Set("margin", "0")
-			html.Get("style").Set("height", "100%")
-			html.Get("style").Set("width", "100%")
-			html.Call("removeAttribute", "data-shirei-width")
-			html.Call("removeAttribute", "data-shirei-height")
-		}
-		if body.Truthy() {
-			bs := body.Get("style")
-			bs.Set("margin", "0")
-			bs.Set("height", "100%")
-			bs.Set("width", "100%")
-			bs.Set("overflow", "hidden")
-			bs.Set("display", "block")
-			bs.Set("background", "#fff")
-		}
-		rs.Set("width", "100%")
-		rs.Set("height", "100%")
-		rs.Set("position", "relative")
-		rs.Set("overflow", "hidden")
-		rs.Set("boxShadow", "none")
-		rs.Set("borderRadius", "0")
-		rs.Set("left", "")
-		rs.Set("top", "")
+		return
 	}
+
+	// Top-level: #shirei-root fills leftover space in the page (any in-flow
+	// siblings keep theirs). The floating window is the canvas inside that slot.
+	if html.Truthy() {
+		hs := html.Get("style")
+		hs.Set("margin", "0")
+		hs.Set("height", "100%")
+		hs.Set("width", "100%")
+	}
+	if body.Truthy() {
+		bs := body.Get("style")
+		bs.Set("margin", "0")
+		bs.Set("width", "100%")
+		bs.Set("height", "100%")
+		bs.Set("display", "flex")
+		bs.Set("flexDirection", "column")
+		bs.Set("overflow", "hidden")
+		bs.Set("background", "#fff")
+	}
+	rs.Set("flex", "1")
+	rs.Set("minHeight", "0")
+	rs.Set("minWidth", "0")
+	rs.Set("width", "auto")
+	rs.Set("height", "auto")
+	rs.Set("position", "relative")
+	rs.Set("left", "")
+	rs.Set("top", "")
+	rs.Set("overflow", "hidden")
+	rs.Set("boxShadow", "none")
+	rs.Set("borderRadius", "0")
+
+	wantFloat := fixed && !useFullBleedShell()
+	if wantFloat {
+		if !floatingShell {
+			winW = prefW
+			winH = prefH + titlebarHeight
+			shellInflated = true
+			framePlaced = false
+			placeNewShell()
+			floatingShell = true
+		} else {
+			constrainShell()
+		}
+		rs.Set("background", "#e8e8ee")
+		cs.Set("position", "absolute")
+		cs.Set("boxSizing", "border-box")
+		cs.Set("left", strconv.FormatFloat(frameLeft, 'f', 0, 64)+"px")
+		cs.Set("top", strconv.FormatFloat(frameTop, 'f', 0, 64)+"px")
+		cs.Set("width", strconv.Itoa(winW)+"px")
+		cs.Set("height", strconv.Itoa(winH)+"px")
+		cs.Set("boxShadow", "0 0 0 1px rgba(0,0,0,0.12), 0 8px 28px rgba(0,0,0,0.18), 0 2px 6px rgba(0,0,0,0.08)")
+		cs.Set("borderRadius", "6px")
+		if html.Truthy() {
+			html.Call("setAttribute", "data-shirei-width", strconv.Itoa(winW))
+			html.Call("setAttribute", "data-shirei-height", strconv.Itoa(winH))
+		}
+		notifyParentSize(winW, winH)
+		return
+	}
+
+	floatingShell = false
+	shellInflated = false
+	if html.Truthy() {
+		html.Call("removeAttribute", "data-shirei-width")
+		html.Call("removeAttribute", "data-shirei-height")
+	}
+	rs.Set("background", "#fff")
+	cs.Set("position", "relative")
+	cs.Set("left", "")
+	cs.Set("top", "")
+	cs.Set("width", "100%")
+	cs.Set("height", "100%")
+	cs.Set("boxShadow", "none")
+	cs.Set("borderRadius", "0")
 }
 
 func isEmbeddedFrame() bool {
@@ -593,6 +618,40 @@ func browserHostIsApple() bool {
 	ua := strings.ToLower(nav.Get("userAgent").String())
 	return strings.Contains(ua, "mac os") || strings.Contains(ua, "iphone") ||
 		strings.Contains(ua, "ipad")
+}
+
+// isMobileHost reports a phone or tablet browser (iOS, iPadOS, Android).
+// Chromium exposes this as userAgentData.mobile / platform; Safari uses UA
+// (and the iPadOS-as-MacIntel + maxTouchPoints trick).
+func isMobileHost() bool {
+	nav := js.Global().Get("navigator")
+	if !nav.Truthy() {
+		return false
+	}
+	if ua := nav.Get("userAgentData"); ua.Truthy() {
+		if m := ua.Get("mobile"); m.Type() == js.TypeBoolean && m.Bool() {
+			return true
+		}
+		p := strings.ToLower(ua.Get("platform").String())
+		if strings.Contains(p, "android") || strings.Contains(p, "ios") {
+			return true
+		}
+	}
+	ua := strings.ToLower(nav.Get("userAgent").String())
+	if strings.Contains(ua, "iphone") || strings.Contains(ua, "ipad") ||
+		strings.Contains(ua, "ipod") || strings.Contains(ua, "android") {
+		return true
+	}
+	p := strings.ToLower(nav.Get("platform").String())
+	mt := 0
+	if t := nav.Get("maxTouchPoints"); t.Truthy() {
+		mt = t.Int()
+	}
+	// iPadOS 13+ reports as MacIntel with a multi-touch screen.
+	if mt > 1 && (strings.Contains(p, "mac") || strings.Contains(p, "ipad")) {
+		return true
+	}
+	return false
 }
 
 func gpuForcedOff() bool {

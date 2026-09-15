@@ -49,6 +49,25 @@ func SystemFontScanDone() bool {
 	return systemFontScanDone.Load()
 }
 
+// WaitForSystemFontScan is a test helper that tries to wait until all system font metadata
+// is loaded. It should not be called from regular application code, as it would introduce
+// startup delay. The critical face set is already available from InitFontSubsystem, and
+// live apps shape with that while the rest of the system fonts register in the background.
+//
+// Waits at most 1 seconds, because system font loading should not take that long anyway,
+// and if it does, then let the tests fail.
+func WaitForSystemFontScan() bool {
+	InitFontSubsystem()
+	if SystemFontScanDone() {
+		return true
+	}
+	deadline := time.Now().Add(time.Second)
+	for !SystemFontScanDone() && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	return SystemFontScanDone()
+}
+
 type Color = color.NRGBA
 type Font = font.Face
 

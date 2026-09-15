@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.6.11 - 2026-09-16
+
+Bug fixes and performance improvements
+
+* Fix `shirei_mobilerun` failing to deploy to a connected iPhone
+* Fix web backend not building with `GOOS=js GOARCH=wasm`
+* Web: clamp the floating shell to the viewport; fill the host slot on mobile
+* Axis-specific size queries (`GetResolvedWidth` / `GetResolvedHeight` / `GetContentWidth` / `GetContentHeight`)
+* Skip paint on intermediate layout settle passes; share glyph geometry across frames
+
 ## v0.6.10 - 2026-09-11
 
 Nested modules require `go.hasen.dev/shirei v0.6.10`.

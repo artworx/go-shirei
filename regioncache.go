@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"os"
+	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
 	g "go.hasen.dev/generic"
@@ -104,9 +105,10 @@ func surfaceImageGeneration(s *Surface) uint64 {
 }
 
 // writeSurfaceHash is the single "what the hash must cover" contract for a
-// surface: pointer-free Surface bytes with GlyphRunFirst zeroed (the index is
-// not content), the GlyphRun span those indices name, and the image generation
-// (content referenced only by id — see surfaceImageGeneration).
+// surface: the pointer-free Surface prefix with GlyphRunFirst zeroed, glyph
+// content, and image generation. Shared glyph content uses its immutable hash;
+// external screen-space buffers are hashed directly. Memory addresses are never
+// part of the visual content hash.
 //
 // GlyphRunFirst is zeroed IN PLACE and restored before returning, so the
 // surface bytes can be fed to write without a copy. (A local copy escapes to
@@ -117,10 +119,14 @@ func surfaceImageGeneration(s *Surface) uint64 {
 func writeSurfaceHash(write func([]byte), s *Surface, runs []GlyphRun) {
 	first := s.GlyphRunFirst
 	s.GlyphRunFirst = 0
-	write(g.UnsafeRawBytes(s))
+	write(g.UnsafeRawBytes(s)[:unsafe.Offsetof(s.GlyphData)])
 	s.GlyphRunFirst = first
 	if n := s.GlyphRunCount; n > 0 {
-		write(g.UnsafeSliceBytes(runs[first : first+n]))
+		if s.GlyphData != nil {
+			write(g.UnsafeRawBytes(&s.GlyphData.hash))
+		} else {
+			write(g.UnsafeSliceBytes(runs[first : first+n]))
+		}
 	}
 	if gen := surfaceImageGeneration(s); gen != 0 {
 		var buf [8]byte

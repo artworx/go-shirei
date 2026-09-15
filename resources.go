@@ -38,10 +38,11 @@ type Resources struct {
 	// Text shaping. unwrappedCache is HarfBuzz output (no wrap width).
 	// shapeCache is wrapped lines keyed by unwrapped key + quantized width.
 	// shapeCacheEpoch is the fontLookupEpoch those LRUs were built for.
-	hbfonts         map[FontId]*harfbuzz.Font
-	unwrappedCache  *lru.Cache[uint64, unwrappedShaped]
-	shapeCache      *lru.Cache[uint64, ShapedText]
-	shapeCacheEpoch uint64
+	hbfonts           map[FontId]*harfbuzz.Font
+	unwrappedCache    *lru.Cache[uint64, unwrappedShaped]
+	shapeCache        *lru.Cache[uint64, ShapedText]
+	shapeCacheEpoch   uint64
+	coloredGlyphCache *lru.Cache[coloredGlyphKey, *GlyphRunData]
 
 	// CachedMeasure results (hash(key)+maxSize+host salts → size)
 	measureCache *lru.Cache[uint64, Vec2]
@@ -54,6 +55,7 @@ type Resources struct {
 	glyphMap         map[GlyphKey]*list.Element
 	glyphList        *list.List // front = most recently used
 	glyphBytes       int
+	glyphUpdate      uint64 // Shared cache-update generation, independent of UI frame counters.
 	glyphsAddedBuf   []GlyphKey
 	glyphsEvictedBuf []GlyphKey
 
@@ -95,6 +97,7 @@ func NewResources() *Resources {
 		hbfonts:             make(map[FontId]*harfbuzz.Font),
 		unwrappedCache:      lru.New[uint64, unwrappedShaped](lru.WithCapacity(shapeCacheCap)),
 		shapeCache:          lru.New[uint64, ShapedText](lru.WithCapacity(shapeCacheCap)),
+		coloredGlyphCache:   lru.New[coloredGlyphKey, *GlyphRunData](lru.WithCapacity(shapeCacheCap)),
 		measureCache:        lru.New[uint64, Vec2](lru.WithCapacity(8192)),
 		glyphOutlineMemo:    make(map[glyphOutlineKey]font.GlyphOutline),
 		glyphMap:            make(map[GlyphKey]*list.Element),
@@ -138,6 +141,7 @@ func (r *Resources) syncShapeCachesToEpoch() {
 	}
 	r.unwrappedCache = lru.New[uint64, unwrappedShaped](lru.WithCapacity(shapeCacheCap))
 	r.shapeCache = lru.New[uint64, ShapedText](lru.WithCapacity(shapeCacheCap))
+	r.coloredGlyphCache = lru.New[coloredGlyphKey, *GlyphRunData](lru.WithCapacity(shapeCacheCap))
 	r.shapeCacheEpoch = epoch
 }
 

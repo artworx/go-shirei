@@ -307,6 +307,7 @@ func produceFrame(w, h float64) {
 
 	out := shirei.RunFrameFn(frameFn)
 
+	clear(frameSurfaces) // Release immutable glyph data from the previous snapshot.
 	frameSurfaces = append(frameSurfaces[:0], out.Surfaces...)
 	frameGlyphRuns = append(frameGlyphRuns[:0], out.GlyphRuns...)
 	frameGlyphsAdded = append(frameGlyphsAdded[:0], out.GlyphsAdded...)

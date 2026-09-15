@@ -160,7 +160,7 @@ func feedActivityStrip(active bool) {
 	}
 	RequestNextFrame()
 	Container(Attrs(Expand, FixHeight(trackH), Background(0, 0, 0, 0.06), Clip, NoAnimate), func() {
-		w := GetResolvedSize()[0]
+		w := GetResolvedWidth()
 		if w < 1 {
 			w = GetHost().WindowSize[0]
 		}

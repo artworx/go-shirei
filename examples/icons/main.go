@@ -127,7 +127,7 @@ func IconGrid(visible []*NamedIcon) {
 	Container(Attrs(Viewport), func() {
 		// Column count needs this panel's width, which resolves a frame
 		// late (tutorial §7): frame 1 is degenerate, so settle on frame 2.
-		width := GetResolvedSize()[0]
+		width := GetResolvedWidth()
 		if width <= 0 {
 			RequestNextFrame()
 			return

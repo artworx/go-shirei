@@ -52,7 +52,7 @@ func frameFn() {
 			FontSize(16), TextColor(0, 0, 45, 1))
 
 		// Wrap at the viewport content width (settles after the first pass).
-		rowW := GetAvailableSize()[0]
+		rowW := GetContentWidth()
 		Container(Attrs(Row, Wrap, Gap(20), MaxWidth(rowW)), func() {
 
 			// Color

@@ -90,7 +90,7 @@ func glyphKeyAt(font FontId, glyph GlyphId, em float32) (GlyphKey, bool) {
 type glyphCacheEntry struct {
 	key      GlyphKey
 	bm       GlyphBM
-	lastUsed int64 // FrameNumber; never evict an entry used this frame
+	lastUsed uint64 // Cache-update generation; current-update entries cannot be evicted.
 }
 
 var (
@@ -109,17 +109,23 @@ var (
 // this frame's deltas. Called from RunFrameFn under the frame mutex when the
 // cache is enabled.
 func updateGlyphCache(surfaces []Surface, runs []GlyphRun) (added, evicted []GlyphKey) {
+	res.glyphUpdate++
+	update := res.glyphUpdate
 	res.glyphsAddedBuf = res.glyphsAddedBuf[:0]
 	res.glyphsEvictedBuf = res.glyphsEvictedBuf[:0]
 
 	touch := func(key GlyphKey) {
 		if elem, ok := res.glyphMap[key]; ok {
+			entry := elem.Value.(*glyphCacheEntry)
+			if entry.lastUsed == update {
+				return
+			}
 			res.glyphList.MoveToFront(elem)
-			elem.Value.(*glyphCacheEntry).lastUsed = ui.FrameNumber
+			entry.lastUsed = update
 			return
 		}
 		bm := rasterizeGlyph(key)
-		e := &glyphCacheEntry{key: key, bm: bm, lastUsed: ui.FrameNumber}
+		e := &glyphCacheEntry{key: key, bm: bm, lastUsed: update}
 		res.glyphMap[key] = res.glyphList.PushFront(e)
 		res.glyphBytes += glyphBMBytes(bm)
 		res.glyphsAddedBuf = append(res.glyphsAddedBuf, key)
@@ -128,6 +134,14 @@ func updateGlyphCache(surfaces []Surface, runs []GlyphRun) (added, evicted []Gly
 	for i := range surfaces {
 		s := &surfaces[i]
 		if s.GlyphRunCount > 0 {
+			if s.GlyphData != nil {
+				for _, dep := range s.GlyphData.dependencies {
+					if key, ok := glyphKeyAt(dep.font, dep.glyph, dep.em); ok {
+						touch(key)
+					}
+				}
+				continue
+			}
 			span := runs[s.GlyphRunFirst : s.GlyphRunFirst+s.GlyphRunCount]
 			for j := range span {
 				if key, ok := GlyphKeyForRun(&span[j]); ok {
@@ -146,7 +160,7 @@ func updateGlyphCache(surfaces []Surface, runs []GlyphRun) (added, evicted []Gly
 	for res.glyphBytes > ui.Host.GlyphCacheBudgetBytes && res.glyphList.Len() > 0 {
 		back := res.glyphList.Back()
 		e := back.Value.(*glyphCacheEntry)
-		if e.lastUsed == ui.FrameNumber {
+		if e.lastUsed == update {
 			break
 		}
 		res.glyphList.Remove(back)

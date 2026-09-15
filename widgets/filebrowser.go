@@ -167,7 +167,7 @@ func FileBrowserPanel(cwd *string, filter *string, selected *int, selection *str
 	// width instead of shoving the button.
 	Container(Attrs(Row, CrossMid, Gap(12), Expand), func() {
 		Container(Attrs(Grow(1), Expand, Clip, Extrinsic), func() {
-			w := GetResolvedSize()[0]
+			w := GetResolvedWidth()
 			if w < 1 {
 				w = attrs.Width - 100
 			}

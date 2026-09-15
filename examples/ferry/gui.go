@@ -579,7 +579,7 @@ func MainScreen() {
 	handleArrowKeys()
 	Container(Attrs(Grow(1), Expand, Clip), func() {
 		Container(Attrs(Row, Grow(1), Expand, Clip), func() {
-			totalWidth := GetResolvedSize()[0]
+			totalWidth := GetResolvedWidth()
 			leftAttrs := Attrs(Grow(1), Expand, Clip)
 			if totalWidth > 0 {
 				leftAttrs = Attrs(FixWidth((totalWidth-splitterW)*appData.splitRatio), Expand, Clip)
@@ -882,7 +882,7 @@ func PaneHeader(p *Pane) {
 				p.clearSelection()
 				p.refreshPreview()
 			}
-			avail := GetResolvedSize()[0]
+			avail := GetResolvedWidth()
 			attrs := DefaultTextStyle()
 			attrs.FontSize = 11
 			Label(fitPathTail(p.CWD, avail, attrs), FontSize(11), TextColor(0, 0, 45, 1))

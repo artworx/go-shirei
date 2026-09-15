@@ -3,8 +3,8 @@ module go.hasen.dev/shirei/demos/mobile-camera
 go 1.24.4
 
 require (
-	go.hasen.dev/shirei v0.6.10
-	go.hasen.dev/shirei/ext/camera v0.6.10
+	go.hasen.dev/shirei v0.6.11
+	go.hasen.dev/shirei/ext/camera v0.6.11
 )
 
 require (

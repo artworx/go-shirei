@@ -264,6 +264,13 @@ func (r *SoftRenderer) RenderInto(dst []byte, stride, devW, devH int, scale floa
 func (r *SoftRenderer) RegionStats() RegionStats { return r.regions.fetchStats() }
 
 func (r *SoftRenderer) renderSurfaces(surfaces []Surface, scale float32) {
+	if r.scale != scale {
+		// Region bitmaps contain device pixels; logical surface hashes do not
+		// change when a window moves to a display with a different scale.
+		clear(r.regions.entries)
+		clear(r.regions.prevHashes)
+		clear(r.regions.curHashes)
+	}
 	r.scale = scale
 	r.devOrigin = image.Point{} // the main render is always at the buffer origin
 	// The white canvas is only needed where nothing paints over it. If the backmost
@@ -615,12 +622,10 @@ func (r *SoftRenderer) drawBorder(s *Surface) {
 // -----------------------------------------------------------------------------
 
 func (r *SoftRenderer) drawGlyphRun(s *Surface) {
-	first := int(s.GlyphRunFirst)
 	n := int(s.GlyphRunCount)
-	span := r.glyphRuns[first : first+n]
 	var tmp Surface
-	for i := range span {
-		g := &span[i]
+	for i := 0; i < n; i++ {
+		g := s.GlyphRunAt(i, r.glyphRuns)
 		tmp = Surface{
 			Rect:        g.Rect,
 			Color1:      g.Color,

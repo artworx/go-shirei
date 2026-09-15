@@ -751,7 +751,7 @@ func (s *AppState) driveTraceView(tv testView) {
 			FontSize(11), TextColor(0, 0, 50, 1))
 		return
 	}
-	paneW := GetAvailableSize()[0]
+	paneW := GetContentWidth()
 	imgW := paneW - 28
 	if imgW < 160 {
 		imgW = 160
@@ -827,7 +827,7 @@ func (s *AppState) snapViewer(pkgDir, testName string, snap SnapResult) {
 
 	// Pane width from the Extrinsic detail panel (current container). Capture
 	// before nesting into content-sized chrome that a wide image could inflate.
-	paneW := GetAvailableSize()[0]
+	paneW := GetContentWidth()
 
 	Container(Attrs(Gap(6), Expand, Clip), func() {
 		Container(Attrs(Row, CrossMid, Gap(8), Expand, Clip), func() {

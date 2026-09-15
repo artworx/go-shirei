@@ -114,7 +114,7 @@ func rootView() {
 	}
 
 	Container(Attrs(Viewport, Pad(10), Gap(8), Background(220, 10, 92, 1)), func() {
-		width := GetAvailableSize()[0]
+		width := GetContentWidth()
 		if width < 1 {
 			RequestNextFrame()
 			return

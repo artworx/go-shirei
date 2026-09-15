@@ -60,6 +60,7 @@ func checkSnap(t *testing.T, r shirei.SnapResult) {
 func snapshot(t *testing.T, name string, w, h int, fn shirei.FrameFn) {
 	t.Helper()
 	shirei.InitFontSubsystem()
+	shirei.WaitForSystemFontScan() // test-only; apps must not wait on the font scan
 	ensureIconFonts()
 	ensureDeleteStamp()
 	shaped := shirei.ShapeText("alpha", shirei.DefaultTextStyle())

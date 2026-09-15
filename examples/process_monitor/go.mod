@@ -4,7 +4,7 @@ go 1.24.4
 
 require (
 	go.hasen.dev/procinfo v0.2.0
-	go.hasen.dev/shirei v0.6.10
+	go.hasen.dev/shirei v0.6.11
 )
 
 require (
