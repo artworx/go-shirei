@@ -20,5 +20,3 @@ require (
 	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/text v0.38.0 // indirect
 )
-
-replace go.hasen.dev/shirei => ../..
