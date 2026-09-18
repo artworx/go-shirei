@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.6.12 - 2026-09-18
+
+Basic desktop screen-reader support and glyph-rendering improvements.
+
+* Native accessibility bridges for macOS (Cocoa/VoiceOver), Linux Wayland
+  (AT-SPI/Orca), and 64-bit Windows (UI Automation and MSAA).
+* Static text and basic controls expose spoken labels, roles, state, bounds,
+  keyboard focus and actions. Buttons, toggles and sliders share the normal
+  widget interaction path; custom controls can supply accessibility metadata.
+* Password values stay out of accessibility snapshots. Hidden subtrees and
+  background controls behind active focus traps stay out of the native tree.
+* Native form checks and independent AT-SPI, UIA and MSAA clients support
+  integration testing. Speech checks cover VoiceOver, Orca and NVDA under Proton;
+  native Windows screen-reader acceptance is pending.
+* Glyph rendering reuses converted colors and skips fully clipped glyphs before
+  atlas lookup. Inactive debug overlays avoid formatting work.
+* Drive commands support starting and stopping CPU profiles.
+
+This is initial support for basic controls. Accessible text editing/selection,
+advanced list/table navigation and X11 accessibility are outside its scope.
+See [accessibility](docs/accessibility.md) for setup, APIs and platform limits.
+
 ## v0.6.11 - 2026-09-16
 
 Bug fixes and performance improvements

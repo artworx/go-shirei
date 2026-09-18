@@ -42,9 +42,10 @@ type InputStateData struct {
 // FrameInputData is transient per-frame input (click, scroll, text, touch edges).
 // Stored on the active UI as ui.Host.FrameInput; cleared at end of each pass.
 type FrameInputData struct {
-	Mouse  MouseAction
-	Motion Vec2 // mouse movement
-	Scroll Vec2
+	AccessAction AccessAction // one targeted assistive-technology request
+	Mouse        MouseAction
+	Motion       Vec2 // mouse movement
+	Scroll       Vec2
 
 	// ClickCount is the click-streak position of this frame's MouseClick:
 	// 1 for a single click, 2 for the second click of a double-click, and

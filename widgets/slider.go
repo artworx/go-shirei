@@ -2,6 +2,7 @@ package widgets
 
 import (
 	"fmt"
+	"math"
 
 	"go.hasen.dev/generic"
 	. "go.hasen.dev/shirei"
@@ -77,6 +78,7 @@ type SliderState struct {
 func ProcessSlider(value *float32, cfg SliderConfig) SliderState {
 	var st SliderState
 	st.Disabled = cfg.Disabled
+	action, requested := ProcessAccessAction(AccessFocus|AccessIncrement|AccessDecrement|AccessSetValue, cfg.Disabled || value == nil)
 	st.Min = cfg.Min
 	st.Max = cfg.Max
 	st.Hovered = IsHovered()
@@ -180,6 +182,23 @@ func ProcessSlider(value *float32, cfg SliderConfig) SliderState {
 		}
 	}
 
+	if requested && span > 0 {
+		step := cfg.Step
+		if step <= 0 {
+			step = span / 10
+		}
+		switch action.Kind {
+		case AccessIncrement:
+			*value += step
+		case AccessDecrement:
+			*value -= step
+		case AccessSetValue:
+			if !math.IsNaN(float64(action.Value)) && !math.IsInf(float64(action.Value), 0) {
+				*value = action.Value
+			}
+		}
+	}
+
 	if cfg.Step > 0 {
 		*value = Roundf32(*value/cfg.Step) * cfg.Step
 	}
@@ -231,6 +250,7 @@ func Slider(value *float32, attrs SliderAttrs) {
 		NextAccessRole("slider")
 		if value != nil {
 			NextAccessValue(fmt.Sprintf("%g", *value))
+			NextAccessRange(*value, attrs.Min, attrs.Max, attrs.Step)
 		}
 		AssignAccess()
 		if st.HasFocus {

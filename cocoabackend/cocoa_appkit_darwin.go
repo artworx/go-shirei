@@ -97,7 +97,7 @@ var (
 	gView         objc.ID
 	gDelegate     objc.ID
 	gContentLayer objc.ID
-	gWantsFrame = true
+	gWantsFrame   = true
 
 	markedStr              string
 	markedSel              nsRange
@@ -218,7 +218,10 @@ func ensureAppkit() error {
 		if appkitErr != nil {
 			return
 		}
-		appkitErr = registerClasses()
+		appkitErr = registerAccessClass()
+		if appkitErr == nil {
+			appkitErr = registerClasses()
+		}
 	})
 	return appkitErr
 }
@@ -250,6 +253,11 @@ func registerClasses() error {
 		nil,
 		[]objc.MethodDef{
 			{Cmd: sel("isFlipped"), Fn: viewIsFlipped},
+			{Cmd: sel("isAccessibilityElement"), Fn: viewAccessElement},
+			{Cmd: sel("accessibilityRole"), Fn: viewAccessRole},
+			{Cmd: sel("accessibilityChildren"), Fn: viewAccessChildren},
+			{Cmd: sel("accessibilityHitTest:"), Fn: accessHitTest},
+			{Cmd: sel("accessibilityFocusedUIElement"), Fn: viewAccessFocused},
 			{Cmd: sel("acceptsFirstResponder"), Fn: viewAcceptsFirstResponder},
 			{Cmd: sel("acceptsFirstMouse:"), Fn: viewAcceptsFirstMouse},
 			{Cmd: sel("drawRect:"), Fn: viewDrawRect},

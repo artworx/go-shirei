@@ -44,7 +44,7 @@ func RequestNextFrame() {
 
 func frameHasTransientInput() bool {
 	fi := ui.Host.FrameInput
-	return fi.Mouse != 0 || fi.Key != 0 || fi.Text != "" ||
+	return fi.AccessAction.Kind != 0 || fi.Mouse != 0 || fi.Key != 0 || fi.Text != "" ||
 		fi.Scroll != (Vec2{}) || fi.Motion != (Vec2{}) ||
 		fi.TouchesBeganCount > 0 || fi.TouchesEndedCount > 0
 }
@@ -161,6 +161,11 @@ func RequestOpenURL(url string) {
 // Frame clock (FrameNumber, timeDelta, …) lives on *UI.
 
 type FrameOutputData struct {
+	// Access is the final pass's source-ordered semantic snapshot. Its storage
+	// is valid until the next RunFrameFn; retaining backends copy the slice.
+	Access        []AccessNode
+	AccessChanged bool // independent of paint changes
+
 	Surfaces []Surface
 
 	Copy    string // things we want to put into the clipboard
@@ -362,7 +367,6 @@ func RunFrameFn(frameFn FrameFn) FrameOutputData {
 		// Clip to the root's layout size, not Host.WindowSize: with CSD those
 		// differ (root = surface, WindowSize = content below the titlebar).
 		resolveLayout(ui.current, Rect{Size: ui.current.resolvedSize})
-		collectAccessTree(ui.current)
 		revealFocusedInScrollPorts()
 
 		// ======== begin rendering surfaces ========
@@ -387,7 +391,9 @@ func RunFrameFn(frameFn FrameFn) FrameOutputData {
 			g.ResetSlice(&ui.surfaces)
 			g.ResetSlice(&ui.glyphRuns)
 		}
+		ui.accessPaintOrder = 0
 		collectFrameArtifacts(ui.current, Rect{Size: ui.current.resolvedSize}, finalPass)
+		collectAccessTree(ui.current)
 		ui.SurfaceCount = len(ui.surfaces)
 		ui.ContainerCount = ui.treeCount + 1
 		ui.ContainerBuilt = ui.containerBuilt
@@ -429,6 +435,9 @@ func RunFrameFn(frameFn FrameFn) FrameOutputData {
 
 	var output FrameOutputData
 
+	output.Access = ui.access
+	output.AccessChanged = !slices.Equal(ui.access, ui.publishedAccess)
+	ui.publishedAccess = append(ui.publishedAccess[:0], ui.access...)
 	output.Surfaces = ui.surfaces
 	output.GlyphRuns = ui.glyphRuns
 	output.ContainerCount = ui.ContainerCount
@@ -866,8 +875,11 @@ type _Container struct {
 	anyGrowOrExpand bool // in-flow child with Grow or ExpandAcross; from-outside no-ops otherwise
 	ContentSize     Vec2 // used for scrolling
 
-	access    AccessAttrs
-	accessSet bool
+	access        AccessAttrs
+	accessSet     bool
+	accessText    string
+	accessActions AccessActionKind
+	accessOrder   int
 
 	parent   *_Container
 	children []*_Container
@@ -1581,7 +1593,23 @@ func revealFocusedInScrollPorts() {
 
 // called during the build up of the layout
 func resolveSizeFromInside(container *_Container) {
-	attrs := container.AttrSet
+	attrs := &container.AttrSet
+	// Leaves depend only on padding and size constraints; they have no
+	// child packing, orientation, or wrapping to resolve.
+	if len(container.children) == 0 {
+		size := PadSize(attrs.Padding)
+		size[0] = max(size[0], attrs.MinSize[0])
+		size[1] = max(size[1], attrs.MinSize[1])
+		if attrs.MaxSize[0] > 0 {
+			size[0] = min(size[0], attrs.MaxSize[0])
+		}
+		if attrs.MaxSize[1] > 0 {
+			size[1] = min(size[1], attrs.MaxSize[1])
+		}
+		container.resolvedSize = size
+		container.ContentSize = Vec2{}
+		return
+	}
 
 	// assumes children sizes are already resolved!
 	// we will now resolve _our_ size based on the content size
@@ -1792,6 +1820,8 @@ type HoverableArtifacts struct {
 // children can still sit in the visible range (overflow, floats) and are
 // visited against the same ancestor clip.
 func collectFrameArtifacts(container *_Container, clipRect Rect, paint bool) {
+	container.accessOrder = ui.accessPaintOrder
+	ui.accessPaintOrder++
 	screen := container.ScreenRect
 	screenEmpty := screen.Size[0] <= 0 || screen.Size[1] <= 0
 

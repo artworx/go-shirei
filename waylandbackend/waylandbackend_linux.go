@@ -16,6 +16,7 @@ import (
 	g "go.hasen.dev/generic"
 	"go.hasen.dev/shirei"
 	"go.hasen.dev/shirei/gpurender"
+	"go.hasen.dev/shirei/internal/atspi"
 )
 
 // glyphCacheBudget caps total cached glyph-bitmap bytes (enables the shared core
@@ -23,11 +24,12 @@ import (
 const glyphCacheBudget = 16 << 20
 
 var (
-	winTitle    string
-	winIconPath string
-	winW        int
-	winH        int
-	frameFn     shirei.FrameFn
+	winTitle     string
+	winIconPath  string
+	winW         int
+	winH         int
+	frameFn      shirei.FrameFn
+	accessBridge *atspi.Bridge
 
 	disp          *wl.Display
 	registry      *wl.Registry
@@ -121,6 +123,9 @@ func Run(fn shirei.FrameFn) {
 	}
 	createWindow()
 	tryInitGPU()
+	shirei.GetHost().WindowFocused = false
+	accessBridge = atspi.Start(winTitle, shirei.RequestNextFrame)
+	g.AddExitCleanup(accessBridge.Close)
 
 	// Pump events until the toplevel is closed. Wayland delivers a batch of
 	// events per DisplayDispatch; input handlers update the shirei globals and set
@@ -448,8 +453,15 @@ func drawFrame() {
 	// frameFn consumes input. FrameInput is reset at the end of RunFrameFn.
 	injectPendingPaste()
 	flushPendingText()
+	if shirei.GetFrameInput().AccessAction.Kind == 0 {
+		shirei.GetFrameInput().AccessAction = accessBridge.NextAction()
+	}
 
 	out := shirei.RunFrameFn(frameFn)
+	accessBridge.Publish(out.Access, out.AccessChanged, shirei.Vec2{float32(logicalW), float32(logicalH)}, shirei.GetHost().WindowFocused)
+	if accessBridge.HasActions() {
+		out.NextFrameRequested = true
+	}
 
 	if csdEnabled {
 		shirei.GetHost().WindowSize[1] = float32(logicalH - titlebarHeight)

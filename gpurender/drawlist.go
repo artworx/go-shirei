@@ -182,7 +182,9 @@ func (b *builder) emit(s *shirei.Surface) {
 	case s.GlyphRunCount > 0:
 		b.emitGlyphRun(s)
 	case s.FontId > 0 && s.GlyphId > 0:
-		b.emitGlyph(s)
+		g := shirei.GlyphRun{Rect: s.Rect, Color: s.Color1,
+			FontId: s.FontId, GlyphId: s.GlyphId, GlyphOffset: s.GlyphOffset}
+		b.emitGlyph(&g, b.glyphColor(g.Color))
 	case s.ImageId > 0:
 		b.emitImage(s)
 	case s.Stroke > 0:
@@ -215,36 +217,44 @@ func (b *builder) emitFill(s *shirei.Surface) {
 
 func (b *builder) emitGlyphRun(s *shirei.Surface) {
 	n := int(s.GlyphRunCount)
-	var tmp shirei.Surface
+	var color, tint shirei.Vec4
 	for i := 0; i < n; i++ {
 		g := s.GlyphRunAt(i, b.glyphRuns)
-		tmp = shirei.Surface{
-			Rect:        g.Rect,
-			Color1:      g.Color,
-			Color2:      g.Color,
-			FontId:      g.FontId,
-			GlyphId:     g.GlyphId,
-			GlyphOffset: g.GlyphOffset,
+		// Consecutive glyphs commonly share a color, including uniform runs.
+		if i == 0 || g.Color != color {
+			color = g.Color
+			tint = b.glyphColor(color)
 		}
-		b.emitGlyph(&tmp)
+		b.emitGlyph(&g, tint)
 	}
 }
 
-func (b *builder) emitGlyph(s *shirei.Surface) {
-	px := int(s.Rect.Size[1]*b.scale + 0.5)
+func (b *builder) glyphColor(hsla shirei.Vec4) shirei.Vec4 {
+	c := shirei.HSLAColor(hsla)
+	return shirei.Vec4{float32(c.R) / 255, float32(c.G) / 255,
+		float32(c.B) / 255, float32(c.A) / 255 * b.alpha}
+}
+
+func (b *builder) emitGlyph(g *shirei.GlyphRun, tint shirei.Vec4) {
+	px := int(g.Rect.Size[1]*b.scale + 0.5)
 	if px < 1 || px > 65535 {
 		return
 	}
-	key := shirei.GlyphKey{FontId: s.FontId, GlyphId: s.GlyphId, Px: uint16(px)}
+	key := shirei.GlyphKey{FontId: g.FontId, GlyphId: g.GlyphId, Px: uint16(px)}
 	bm, ok := shirei.GlyphBitmap(key)
 	if !ok || bm.W == 0 || bm.H == 0 {
 		return
 	}
-	penX := (s.Rect.Origin[0] + s.GlyphOffset[0]) * b.scale
-	penY := (s.Rect.Origin[1] + s.Rect.Size[1]*0.82 + s.GlyphOffset[1]) * b.scale
+	penX := (g.Rect.Origin[0] + g.GlyphOffset[0]) * b.scale
+	penY := (g.Rect.Origin[1] + g.Rect.Size[1]*0.82 + g.GlyphOffset[1]) * b.scale
 	x0 := int(shirei.Roundf32(penX + bm.OffX))
 	y0 := int(shirei.Roundf32(penY + bm.OffY))
 	dr := image.Rect(x0, y0, x0+bm.W, y0+bm.H)
+	// Test bitmap bounds, not the advance box: italic and combining glyphs
+	// can paint beyond their nominal cell. The clip already includes the viewport.
+	if !dr.Overlaps(b.clip) {
+		return
+	}
 
 	if len(bm.RGBA) > 0 {
 		slot, ok := packColorGlyph(key, bm)
@@ -270,15 +280,12 @@ func (b *builder) emitGlyph(s *shirei.Surface) {
 		gpu.failed = true
 		return
 	}
-	c := shirei.HSLAColor(s.Color1)
-	a := b.alpha
-	cr, cg, cb, ca := float32(c.R)/255, float32(c.G)/255, float32(c.B)/255, float32(c.A)/255*a
 	b.appendQuad(Quad{
 		X: float32(dr.Min.X), Y: float32(dr.Min.Y),
 		W: float32(dr.Dx()), H: float32(dr.Dy()),
 		U: slot.u, V: slot.v, UW: slot.uw, VH: slot.vh,
-		R: cr, G: cg, B: cb, A: ca,
-		R2: cr, G2: cg, B2: cb, A2: ca,
+		R: tint[0], G: tint[1], B: tint[2], A: tint[3],
+		R2: tint[0], G2: tint[1], B2: tint[2], A2: tint[3],
 	}, texGlyph, 0)
 }
 

@@ -59,6 +59,8 @@ type ButtonState struct {
 func ProcessButtonEvents(disabled bool) ButtonState {
 	var st ButtonState
 	st.Disabled = disabled
+	action, requested := ProcessAccessAction(AccessPress|AccessFocus, disabled)
+	st.Clicked = requested && action.Kind == AccessPress
 	st.Hovered = IsHovered()
 	origin := GetScreenRect().Origin
 	st.Local = Vec2Sub(GetInputState().MousePoint, origin)
@@ -290,6 +292,7 @@ func ButtonExt(label string, attrs ButtonAttrs, look ButtonLook) bool {
 	Container(Attrs(), func() {
 		st := ProcessButtonEvents(attrs.Disabled)
 		NextAccessRole("button")
+		NextAccessDisabled(attrs.Disabled)
 		AssignAccess()
 		action = st.Clicked
 

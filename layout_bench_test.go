@@ -2,6 +2,7 @@ package shirei
 
 import (
 	"testing"
+	"time"
 )
 
 // Layout-pass benchmarks: ~3k containers mixing rows/columns, Expand, Grow,
@@ -13,6 +14,9 @@ import (
 func layoutBenchFrame(b *testing.B, animating bool, tree func()) {
 	b.Helper()
 	InitFontSubsystem()
+	for !SystemFontScanDone() {
+		time.Sleep(time.Millisecond)
+	}
 	ResetInputSession()
 	scope := new(int)
 	sizes := [2]Vec2{{800, 600}, {900, 700}}

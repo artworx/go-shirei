@@ -67,9 +67,11 @@ func DebugMessage(msg string) {
 }
 
 // DebugVar adds a "name: value" line to the debug overlay, formatting value as
-// compact JSON.
+// compact JSON. Formatting is skipped when the overlay isn't accepting messages.
 func DebugVar(name string, value any) {
-	// TODO: handle structs or other nested objects!!
+	if !DEBUG_ENV || ActiveUI().FrameNumber > _panel.frameNumber+1 {
+		return
+	}
 	DebugMessage(fmt.Sprintf("%s: %v", name, compactJson(value)))
 }
 

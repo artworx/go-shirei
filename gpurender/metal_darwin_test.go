@@ -22,17 +22,6 @@ func TestMetalSharedTextMatchesExpandedGlyphs(t *testing.T) {
 	}()
 	host.WindowSize = shirei.Vec2{240, 140}
 	host.GlyphCacheBudgetBytes = 16 << 20
-	read := func(s unsafe.Pointer, w, h int) []byte {
-		p := uintptr(s)
-		ioSurfaceLock(p, kIOSurfaceLockReadOnly, nil)
-		defer ioSurfaceUnlock(p, kIOSurfaceLockReadOnly, nil)
-		base, stride := ioSurfaceGetBaseAddress(p), ioSurfaceGetBytesPerRow(p)
-		pixels := make([]byte, w*h*4)
-		for y := 0; y < h; y++ {
-			copy(pixels[y*w*4:(y+1)*w*4], unsafe.Slice((*byte)(unsafe.Pointer(base+uintptr(y)*stride)), w*4))
-		}
-		return pixels
-	}
 	for _, scale := range []float32{1, 2} {
 		host.WindowScale = scale
 		w, h := int(240*scale), int(140*scale)
@@ -47,12 +36,13 @@ func TestMetalSharedTextMatchesExpandedGlyphs(t *testing.T) {
 			for range 3 {
 				out = shirei.RunFrameFn(func() {
 					shirei.ModAttrs(shirei.NoAnimate)
-					shirei.Container(shirei.Attrs(shirei.Pad(8), shirei.MaxWidth(190), shirei.Clip), func() {
-						shirei.Label("office العربية", shirei.TextColor(hue, 80, 40, 1))
+					shirei.Container(shirei.Attrs(shirei.Pad(8), shirei.MaxWidth(190), shirei.Clip, shirei.Corners(7), func(a *shirei.AttrSet) { a.Transparency = .2 }), func() {
+						shirei.Label("office العربية 😀", shirei.TextColor(hue, 80, 40, 1))
 						style := shirei.TextStyle()
 						shirei.Text("Mixed sizes and colors", style,
 							shirei.Span(0, 5, shirei.FontSize(22)),
-							shirei.Span(6, 11, shirei.TextColor(hue, 80, 40, 1)))
+							shirei.Span(6, 11, shirei.TextColor(hue, 80, 40, .6)),
+							shirei.Span(12, 15, shirei.Fonts(shirei.Monospace...)))
 						shaped := shirei.ShapeTextMax("Selection with wrapped words across several lines", style, 160)
 						shirei.ShapedTextLayout(shaped, style, 4, 20)
 					})
@@ -81,7 +71,7 @@ func TestMetalSharedTextMatchesExpandedGlyphs(t *testing.T) {
 			if err := Render(flatTarget, w, h, scale, flat, nil, nil, nil, true); err != nil {
 				t.Fatal(err)
 			}
-			if !bytes.Equal(read(sharedTarget, w, h), read(flatTarget, w, h)) {
+			if !bytes.Equal(testPixels(sharedTarget, w, h), testPixels(flatTarget, w, h)) {
 				t.Fatalf("Metal text differs at scale=%v hue=%v", scale, hue)
 			}
 		}
@@ -382,4 +372,86 @@ func TestMetalTranslucentBlackImageOverWhite(t *testing.T) {
 	if outside[0] < 200 || outside[1] < 200 || outside[2] < 200 {
 		t.Fatalf("outside BGRA=%v want white", outside)
 	}
+}
+
+// TestMetalGlyphClipMatchesCrop compares clipped glyph rendering with a crop of
+// the unclipped image. The fixture includes italic overhang and a color glyph;
+// positions cross all clip edges at integer and fractional display scales.
+func TestMetalGlyphClipMatchesCrop(t *testing.T) {
+	if err := Init(); err != nil {
+		t.Skipf("Metal init: %v", err)
+	}
+	host := shirei.GetHost()
+	oldSize, oldScale, oldBudget := host.WindowSize, host.WindowScale, host.GlyphCacheBudgetBytes
+	defer func() { host.WindowSize, host.WindowScale, host.GlyphCacheBudgetBytes = oldSize, oldScale, oldBudget }()
+	host.WindowSize = shirei.Vec2{128, 96}
+	host.GlyphCacheBudgetBytes = 16 << 20
+	for _, scale := range []float32{1, 1.5, 2} {
+		host.WindowScale = scale
+		var out shirei.FrameOutputData
+		for range 3 {
+			out = shirei.RunFrameFn(func() {
+				shirei.ModAttrs(shirei.NoAnimate)
+				shirei.Container(shirei.Attrs(shirei.FixSize(400, 40)), func() {
+					shirei.ModAttrs(shirei.UnsetMaxCross)
+					shirei.Label("fij office 😀 fjij", shirei.FontSize(24), shirei.FontStyle(shirei.StyleItalic), shirei.TextColor(220, 75, 40, .7))
+				})
+			})
+		}
+		var line shirei.Surface
+		for _, s := range out.Surfaces {
+			if s.GlyphRunCount > 0 {
+				line = s
+				break
+			}
+		}
+		if line.GlyphRunCount < 8 {
+			t.Fatal("missing shaped glyph fixture")
+		}
+		w, h := int(128*scale), int(96*scale)
+		full, clipped := testSurface(w, h), testSurface(w, h)
+		if full == nil || clipped == nil {
+			t.Fatal("no IOSurface")
+		}
+		defer testRelease(full)
+		defer testRelease(clipped)
+		clip := shirei.Rect{Origin: shirei.Vec2{16, 16}, Size: shirei.Vec2{64, 64}}
+		for _, x := range []float32{-100, 0, 70} {
+			for _, y := range []float32{-5, 20, 70} {
+				line.Rect.Origin = shirei.Vec2{x, y}
+				if err := Render(full, w, h, scale, []shirei.Surface{line}, out.GlyphRuns, out.GlyphsAdded, out.GlyphsEvicted, true); err != nil {
+					t.Fatal(err)
+				}
+				surfaces := []shirei.Surface{{Rect: clip, Clip: shirei.ClipPush}, line, {Rect: clip, Clip: shirei.ClipPop}}
+				if err := Render(clipped, w, h, scale, surfaces, out.GlyphRuns, nil, nil, true); err != nil {
+					t.Fatal(err)
+				}
+				expected, actual := testPixels(full, w, h), testPixels(clipped, w, h)
+				lo, hi := int(16*scale), int(80*scale)
+				for py := 0; py < h; py++ {
+					for px := 0; px < w; px++ {
+						off := (py*w + px) * 4
+						if px < lo || px >= hi || py < lo || py >= hi {
+							copy(expected[off:off+4], []byte{255, 255, 255, 255})
+						}
+					}
+				}
+				if !bytes.Equal(expected, actual) {
+					t.Fatalf("glyph crop differs: scale=%v origin=(%v,%v)", scale, x, y)
+				}
+			}
+		}
+	}
+}
+
+func testPixels(s unsafe.Pointer, w, h int) []byte {
+	p := uintptr(s)
+	ioSurfaceLock(p, kIOSurfaceLockReadOnly, nil)
+	defer ioSurfaceUnlock(p, kIOSurfaceLockReadOnly, nil)
+	base, stride := ioSurfaceGetBaseAddress(p), ioSurfaceGetBytesPerRow(p)
+	pixels := make([]byte, w*h*4)
+	for y := 0; y < h; y++ {
+		copy(pixels[y*w*4:(y+1)*w*4], unsafe.Slice((*byte)(unsafe.Pointer(base+uintptr(y)*stride)), w*4))
+	}
+	return pixels
 }

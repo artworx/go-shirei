@@ -134,7 +134,7 @@ loopback UDP: [docs/drive-tutorial.md](docs/drive-tutorial.md). Command list:
 ## Limitations
 
 * Shirei apps only have one window with standard decorations
-* Accessibility support not available yet, but planned before v1.0
+* Basic screen-reader support on macOS, Linux Wayland and 64-bit Windows covers static text, buttons, toggles and sliders; see [accessibility](docs/accessibility.md) for scope and testing
 * No app-owned GPU surfaces (video, custom 3D); under consideration
 
 ## Getting started

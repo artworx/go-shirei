@@ -56,11 +56,36 @@ origin top-left).
 | `focused` | `#N #M …` or empty | Identity serials: leaf, then ancestors to root. |
 | `hovered` | `#N #M …` or empty | Hover stack: direct hit, then ancestors. |
 | `screenshot path` | `ok` | Write a PNG of the last completed frame (`SoftRenderer`, same as `--png`). Path is the rest of the line (app filesystem). `drive.Shot` uses this when `SHIREI_DRIVE_TRACE` is set. |
+| `profile_start path` | `ok` | Start a process-wide CPU profile. Path is the rest of the line, relative to the app working directory or absolute. Fails if any CPU profiler is already running. |
+| `profile_stop` | `ok` | Stop the drive-owned recording, flush it, and publish it at the requested path. Fails if no drive recording is active. |
 | `quit` / `exit` | (empty) | `generic.ExitWithCleanup(0)` on a new goroutine. |
 
 `query` with no matches is `count: 0`. `count` with no matches is `0`.
 `show` with no match is `error: no match`. `focused` / `hovered` with
 none is empty.
+
+---
+
+## CPU profiles
+
+```text
+profile_start /tmp/haystack-scroll.pprof
+move 500 500
+wheel 100
+profile_stop
+```
+
+Recordings write to a temporary file in the destination directory. A successful
+stop atomically renames it to the requested path, replacing an existing file.
+The directory must exist. Spaces in the path are literal; no quoting is needed.
+Normal app exit through `generic.ExitWithCleanup` also finishes an active drive
+recording. A forced kill cannot finish it. If publishing fails, the error names
+the temporary file so it can be recovered.
+
+These commands do not enable the profiler panel or request continuous frames.
+Drive the interaction being measured between start and stop. CPU profiling
+includes all Go goroutines, including background search and rendering work.
+The commands cannot stop a recording started by the profiler panel or app code.
 
 ---
 

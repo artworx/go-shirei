@@ -95,6 +95,16 @@ func HandleInputCommand(line string) string {
 			return "error: usage: hovered"
 		}
 		return inputCmdHovered()
+	case "profile_start":
+		return inputCmdProfileStart(rest)
+	case "profile_stop":
+		if rest != "" {
+			return "error: usage: profile_stop"
+		}
+		if err := stopInputCPUProfile(); err != nil {
+			return "error: " + err.Error()
+		}
+		return "ok"
 	case "screenshot":
 		return inputCmdScreenshot(rest)
 	case "quit", "exit":

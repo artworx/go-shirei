@@ -1108,7 +1108,13 @@ func TextInputExt(buf *string, attrs TextInputAttrs) {
 		}
 		st := ProcessTextInput(buf, raw)
 		NextAccessRole("text")
-		NextAccessValue(*buf)
+		NextAccessEditable(true, cfg.Wrap || cfg.MaxLines != 1)
+		NextAccessProtected(attrs.Masked)
+		if !attrs.Masked {
+			NextAccessValue(*buf)
+		} else {
+			NextAccessValue("")
+		}
 		AssignAccess()
 		if st.HasFocus {
 			ModAttrs(BorderColor(0, 0, 0, 0.30))

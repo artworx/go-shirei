@@ -18,24 +18,26 @@ type UI struct {
 	Host Host
 
 	// Build cursor and pass buffers (layout / surface emit for one frame world).
-	current        *_Container
-	nextAccess     AccessAttrs
-	access         []AccessNode
-	accessByName   map[string][]int
-	surfaces       []Surface
-	glyphRuns      []GlyphRun
-	surfaceHash    uint64 // hash of last presented surfaces (present skip)
-	SurfaceCount   int    // surfaces emitted last pass
-	ContainerCount int    // live layout tree (last pass)
-	ContainerBuilt int    // ContainerWithKey this pass, including nested Measure
-	containerBuilt int    // running ContainerWithKey count for the current pass
+	current          *_Container
+	nextAccess       AccessAttrs
+	access           []AccessNode
+	publishedAccess  []AccessNode
+	accessByName     map[string][]int
+	accessPaintOrder int
+	surfaces         []Surface
+	glyphRuns        []GlyphRun
+	surfaceHash      uint64 // hash of last presented surfaces (present skip)
+	SurfaceCount     int    // surfaces emitted last pass
+	ContainerCount   int    // live layout tree (last pass)
+	ContainerBuilt   int    // ContainerWithKey this pass, including nested Measure
+	containerBuilt   int    // running ContainerWithKey count for the current pass
 	// treeCount counts containers in the current pass's live tree (root
 	// excluded). Nested Measure increments the measure-UI's own counter,
 	// which is discarded; unlike containerBuilt it is not transferred back.
 	treeCount            int
 	anyFocusable         bool // set during build; skip collectFocusables when false
 	anyTabAfter          bool // set during build; skip gatherTabAfter when false
-	anyAccess            bool // set by AssignAccess; skip access walk when false
+	anyAccess            bool // set by AssignAccess or text capture; skip access walk when false
 	hoverables           []HoverableArtifacts
 	focusables           []*identNode
 	tabAfterSpecs        []*_Container

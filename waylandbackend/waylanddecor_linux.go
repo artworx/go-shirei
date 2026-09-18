@@ -81,10 +81,14 @@ func drawTitlebar() {
 func closeButton() bool {
 	clicked := false
 	Container(Attrs(Row, Center, FixSize(26, 26), Corners(5)), func() {
+		NextAccessRole("button")
+		NextAccessLabel("Close window")
+		AssignAccess()
+		action, requested := ProcessAccessAction(AccessPress, false)
 		if IsHovered() {
 			ModAttrs(Background(5, 70, 62, 1))
 		}
-		if IsClicked() {
+		if IsClicked() || (requested && action.Kind == AccessPress) {
 			clicked = true
 		}
 		Label("×", FontSize(20), TextColor(0, 0, 25, 1))

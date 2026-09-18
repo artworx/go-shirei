@@ -764,13 +764,14 @@ func descenderPadForLine(line *ShapedTextLine, style TextStyleAttrs) f32 {
 func ShapedTextLayout(shaped ShapedText, style TextStyleAttrs, selectionFrom int, selectionTo int, spans ...StyleSpan) {
 	// Compose overlapping spans once; layout only sees disjoint full styles.
 	flat := effectiveSpans(style, spans, len(shaped.Runes))
-	shapedTextLayoutFlat(shaped, style, selectionFrom, selectionTo, flat)
+	shapedTextLayoutFlat(shaped, style, selectionFrom, selectionTo, flat, string(shaped.Runes))
 }
 
 // shapedTextLayoutFlat is ShapedTextLayout after span flattening: spans must
 // be effectiveSpans output. Text calls it directly with the spans it already
 // resolved for shaping.
-func shapedTextLayoutFlat(shaped ShapedText, style TextStyleAttrs, selectionFrom int, selectionTo int, spans []StyleSpan) {
+func shapedTextLayoutFlat(shaped ShapedText, style TextStyleAttrs, selectionFrom int, selectionTo int, spans []StyleSpan, source string) {
+	ui.anyAccess = true
 	// Block size is content-driven; wrap constraint is the parent's cascaded
 	// MaxSize (set by Text under a max-width container, or by an explicit
 	// MaxWidth host). Soft-wrap line breaks were already applied at shape time.
@@ -803,6 +804,7 @@ func shapedTextLayoutFlat(shaped ShapedText, style TextStyleAttrs, selectionFrom
 		// MinSize is the outer box: em plus the symmetric descender pads.
 		blockAttrs.MinSize[1] = lineEm + 2*blockAttrs.Padding[PAD_TOP]
 		Container(blockAttrs, func() {
+			ui.current.accessText = source
 			ui.current.textRunWidth = line.Width
 			ui.current.textRunEm = line.maxEm
 			ui.current.glyphData = line.runData
@@ -814,6 +816,7 @@ func shapedTextLayoutFlat(shaped ShapedText, style TextStyleAttrs, selectionFrom
 	var nextLinePaddingTop float32 // to manage spaces between lines
 
 	Container(blockAttrs, func() {
+		ui.current.accessText = source
 		for idx := range shaped.Lines {
 			line := &shaped.Lines[idx]
 			ShapedTextLineLayout(line, style, spans, shaped.BaseDir, selectionFrom, selectionTo, &nextLinePaddingTop)
@@ -848,6 +851,16 @@ func SafeTruncateUTF8(s string, limit int) string {
 //
 // Label is the convenience for current text style + call-local mods with no spans.
 func Text(label string, style TextStyleAttrs, spans ...TextSpan) {
+	text(label, style, false, spans...)
+}
+
+// DecorativeText draws text without exposing its characters to assistive
+// technology. Icon fonts use this; the surrounding control supplies a label.
+func DecorativeText(label string, style TextStyleAttrs) {
+	text(label, style, true)
+}
+
+func text(label string, style TextStyleAttrs, decorative bool, spans ...TextSpan) {
 	// For performance reasons, do not accept text larger than 16kb
 	// We will add a segmented text view in the future to handle large text blobs
 	label = SafeTruncateUTF8(label, 16*1024)
@@ -865,7 +878,11 @@ func Text(label string, style TextStyleAttrs, spans ...TextSpan) {
 		flat = effectiveSpans(style, resolveTextSpans(style, spans), utf8.RuneCountInString(label))
 	}
 	shaped := shapeTextMaxFlat(label, style, maxWidth, flat)
-	shapedTextLayoutFlat(shaped, style, 0, 0, flat)
+	source := label
+	if decorative {
+		source = ""
+	}
+	shapedTextLayoutFlat(shaped, style, 0, 0, flat, source)
 }
 
 type TextLayout struct {

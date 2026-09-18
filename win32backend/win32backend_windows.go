@@ -102,6 +102,7 @@ func Run(fn shirei.FrameFn) {
 
 	enableDPIAwareness()
 	createWindow()
+	initAccess()
 	tryInitGPU()
 	messageLoop()
 	g.ExitWithCleanup(0)
@@ -217,6 +218,18 @@ func messageLoop() {
 
 func wndProc(hWnd, msg, wparam, lparam uintptr) uintptr {
 	switch uint32(msg) {
+	case 0x003D: // WM_GETOBJECT
+		if result, handled := accessGetObject(hWnd, wparam, lparam); handled {
+			return result
+		}
+	case accessWake: // queued accessibility action
+		noteInput()
+		return 0
+	case 0x0003, 0x0007: // WM_MOVE, WM_SETFOCUS
+		refreshAccess()
+		noteInput()
+		return 0
+
 	case wmPaint:
 		onPaint()
 		return 0
@@ -225,6 +238,7 @@ func wndProc(hWnd, msg, wparam, lparam uintptr) uintptr {
 		return 1 // we paint every pixel; skip the background erase (no flicker)
 
 	case wmSize:
+		refreshAccess()
 		// Size change invalidates the last presented content.
 		havePresented = false
 		dirty = true
@@ -243,6 +257,7 @@ func wndProc(hWnd, msg, wparam, lparam uintptr) uintptr {
 		invalidate()
 		return 0
 	case wmKillfocus:
+		refreshAccess()
 		clearComposition()
 		noteInput()
 		return 0
@@ -353,6 +368,7 @@ func wndProc(hWnd, msg, wparam, lparam uintptr) uintptr {
 		return 0
 
 	case wmDestroy:
+		closeAccess()
 		releaseGPU()
 		releaseDIB()
 		if memDC != 0 {
@@ -426,8 +442,10 @@ func produceFrame(cw, ch int) (out shirei.FrameOutputData, skipped bool) {
 	shirei.GetHost().WindowSize = shirei.Vec2{float32(cw) / scale, float32(ch) / scale}
 
 	flushPendingText()
+	flushAccessAction()
 
 	out = shirei.RunFrameFn(frameFn)
+	updateAccess(out.Access, out.AccessChanged)
 	updateImeCandidateWindow()
 
 	if out.Copy != "" {

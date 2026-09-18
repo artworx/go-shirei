@@ -65,5 +65,6 @@ func main() {
 
 	app.SetupWindow("haystack", winW, winH)
 	app.SetupIconBytes(iconPNG)
+	app.SetupDrive()
 	app.Run(RootView)
 }
