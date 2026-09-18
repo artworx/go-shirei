@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.6.12 - 2026-09-18
+## v0.7.0 - 2026-09-18
 
 Basic desktop screen-reader support and glyph-rendering improvements.
 
@@ -21,6 +21,10 @@ Basic desktop screen-reader support and glyph-rendering improvements.
 This is initial support for basic controls. Accessible text editing/selection,
 advanced list/table navigation and X11 accessibility are outside its scope.
 See [accessibility](docs/accessibility.md) for setup, APIs and platform limits.
+
+## v0.6.12 - 2026-09-18
+
+The feature set matches v0.7.0 above. Use v0.7.0 for this release.
 
 ## v0.6.11 - 2026-09-16
 
