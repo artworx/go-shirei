@@ -196,49 +196,66 @@ func TestShadowKeyDoesNotCollideWithStringKey(t *testing.T) {
 	}
 }
 
-func TestLoadImageDoesNotReadLargeFileOnCaller(t *testing.T) {
+func TestLoadImageDoesNotReadFileOnCaller(t *testing.T) {
+	for _, large := range []bool{false, true} {
+		name := "small"
+		if large {
+			name = "large"
+		}
+		t.Run(name, func(t *testing.T) { testBackgroundImageLoad(t, large) })
+	}
+}
+
+func testBackgroundImageLoad(t *testing.T, large bool) {
+	t.Helper()
 	var encoded bytes.Buffer
 	if err := png.Encode(&encoded, fillRGBA(0x44)); err != nil {
 		t.Fatal(err)
 	}
 	content := encoded.Bytes()
-	content = append(content, make([]byte, 500*1024+1-len(content))...)
-	path := t.TempDir() + "/large.png"
+	if large {
+		content = append(content, make([]byte, 500*1024+1-len(content))...)
+	}
+	path := t.TempDir() + "/image.png"
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatal(err)
 	}
-
 	originalRead := readImageFileContent
-	started := make(chan struct{})
-	release := make(chan struct{})
+	started, release := make(chan struct{}), make(chan struct{})
 	released := false
 	defer func() {
-		readImageFileContent = originalRead
 		if !released {
 			close(release)
 		}
+		readImageFileContent = originalRead
 	}()
-	readImageFileContent = func(path string) ([]byte, error) {
-		close(started)
-		<-release
-		return os.ReadFile(path)
-	}
-
+	readImageFileContent = func(path string) ([]byte, error) { close(started); <-release; return os.ReadFile(path) }
 	loaded := make(chan *ImageData, 1)
-	go func() { loaded <- LoadImage(path) }()
+	go func() { WithFrameLock(func() { loaded <- LoadImage(path) }) }()
 	select {
 	case <-started:
 	case <-time.After(2 * time.Second):
-		t.Fatal("background image read did not start")
+		t.Fatal("background read did not start")
 	}
+	var data *ImageData
 	select {
-	case imageData := <-loaded:
-		if imageData.Config.Width != 4 || imageData.Config.Height != 4 {
-			t.Fatalf("header dimensions = %dx%d, want 4x4", imageData.Config.Width, imageData.Config.Height)
+	case data = <-loaded:
+		if data.Config.Width != 4 || data.Config.Height != 4 {
+			t.Fatalf("header dimensions = %dx%d", data.Config.Width, data.Config.Height)
 		}
 	case <-time.After(500 * time.Millisecond):
-		t.Fatal("LoadImage waited for the blocked large-file read")
+		t.Fatal("LoadImage waited for a blocked image read")
 	}
 	close(release)
 	released = true
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		ready := false
+		WithFrameLock(func() { ready = len(data.Pix) > 0 && data.Generation > 0 })
+		if ready {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("background pixels were not published")
 }
