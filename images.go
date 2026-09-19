@@ -193,9 +193,9 @@ func DebugGetImageCacheStats() ImageCacheStats {
 type ImageData struct {
 	image.Config
 	image.RGBA
-	// Opaque lets the software renderer bypass per-pixel alpha inspection and
-	// use its architecture-specific RGBA-to-BGRA row swizzle. Callers must only
-	// set it when every source pixel has alpha 255.
+	// Opaque skips the initial opacity scan and enables opaque interior row
+	// copies after the scaled-image cache converts pixels to destination order.
+	// Callers must only set it when every source pixel has alpha 255.
 	Opaque bool
 	// Generation is bumped whenever the RGBA pixels behind this id are established
 	// or replaced (async decode completion, UseImage replacement). The region
@@ -340,8 +340,8 @@ func UseImage(key string, rgba *image.RGBA) ImageId {
 }
 
 // UseOpaqueImage is UseImage for a caller-known fully opaque raster. The
-// promise enables a SIMD paint path in software backends without rescanning the
-// same generated image every frame.
+// promise skips the initial opacity scan and enables opaque row copies in
+// software backends. Upstream caches pixel ordering and subsequent opacity checks.
 func UseOpaqueImage(key string, rgba *image.RGBA) ImageId {
 	return useImage(key, rgba, true)
 }

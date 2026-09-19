@@ -1,6 +1,7 @@
 package shirei
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -342,5 +343,46 @@ func TestCalculateShapedTextViewportWindow(t *testing.T) {
 	visibleHeight := float32(window.end-window.start) * 20
 	if window.topSpacer+visibleHeight+window.bottomSpacer != 2000 {
 		t.Fatalf("virtualized height = %.1f, want full height 2000", window.topSpacer+visibleHeight+window.bottomSpacer)
+	}
+}
+
+func TestLargeIncrementalEditRefreshesPaintGeometry(t *testing.T) {
+	style := requireTextShaping(t)
+	WaitForSystemFontScan()
+	text := strings.Repeat("aaaaaaaaaaaaaaaa\n", 1100)
+	initial := ShapeTextMax(text, style, 900)
+	edited := []rune(text)
+	edited[17*500+5] = 'b'
+	before := SegmentShapeStats.Calls
+	got := ShapeTextMax(string(edited), style, 900)
+	if SegmentShapeStats.Calls-before != 1 {
+		t.Fatal("safe edit must reshape only its changed segment")
+	}
+	if got.Lines[500].runData == initial.Lines[500].runData {
+		t.Fatal("edited line retained stale glyph geometry")
+	}
+	if got.Lines[501].runData != initial.Lines[501].runData {
+		t.Fatal("unchanged line lost its shared glyph geometry")
+	}
+	segments := produceShapedSegments(edited, ParagraphBidi(string(edited)), style, nil)
+	want := wrapUnwrapped(unwrappedShaped{Runes: edited, BaseDir: segments[0].Dir, Segments: segments}, style, 900)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatal("incremental layout or paint geometry differs from full shaping")
+	}
+}
+
+func TestFontEpochInvalidatesForkShapeCaches(t *testing.T) {
+	style := requireTextShaping(t)
+	WaitForSystemFontScan()
+	text := strings.Repeat("epoch 00000000\n", 1400)
+	ShapeText(text, style)
+	faceRegistryMu.Lock()
+	res.fontLookupEpoch++
+	faceRegistryMu.Unlock()
+	before := SegmentShapeStats.Calls
+	hits := SegmentShapeStats.Hits
+	ShapeText(strings.Replace(text, "00000000", "00000001", 1), style)
+	if SegmentShapeStats.Calls-before <= 1 || SegmentShapeStats.Hits != hits {
+		t.Fatal("font registry change reused incremental or segment cache entries")
 	}
 }
