@@ -545,6 +545,21 @@ func ShapedTextLineLayout(line *ShapedTextLine, style TextStyleAttrs, spans []St
 }
 
 func shapedTextLineLayoutColor(line *ShapedTextLine, style TextStyleAttrs, spans []StyleSpan, baseDir Direction, selectionFrom int, selectionTo int, nextLinePaddingTop *f32, selectionColor Vec4, rowHeight float32) {
+	// Only this line's spans can affect its paint geometry. In particular,
+	// hashing all document colors per visible line defeats viewport layout.
+	if len(spans) > 0 {
+		from, to := line.firstCluster, line.firstCluster
+		for _, segment := range line.Segments {
+			to = max(to, segment.start+segment.length)
+		}
+		first := sort.Search(len(spans), func(i int) bool { return spans[i].To > from })
+		last := sort.Search(len(spans), func(i int) bool { return spans[i].From >= to })
+		if last < first {
+			last = first
+		}
+		spans = spans[first:last]
+	}
+
 	// the line box is lineEm tall (max em on the line); the rest of the line
 	// height (the leading) is applied as top padding, spacing this line from
 	// the previous one. Glyph bitmaps are keyed by container height
@@ -904,6 +919,38 @@ func shapedTextLineEm(line *ShapedTextLine, fallback float32) float32 {
 	return lineEm
 }
 
+// ShapedTextLayoutPadding is the symmetric vertical ink padding added by
+// shaped-text layout. Editors can subtract it when positioning their own
+// glyph block so caret and hit-test coordinates stay relative to the em box.
+func ShapedTextLayoutPadding(shaped ShapedText) float32 {
+	if len(shaped.Lines) == 0 {
+		return 0
+	}
+	return shaped.Lines[len(shaped.Lines)-1].descenderPad
+}
+
+// ShapedTextLayoutHeight returns the full block height, including the same
+// leading and ink padding used by both full and viewport layouts.
+func ShapedTextLayoutHeight(shaped ShapedText, style TextStyleAttrs) float32 {
+	if len(shaped.Lines) == 0 {
+		return 0
+	}
+	var height float32
+	for _, line := range shaped.Lines {
+		if line.Height > 0 {
+			height += line.Height
+		} else {
+			height += style.FontSize
+		}
+	}
+	last := &shaped.Lines[len(shaped.Lines)-1]
+	lastHeight := last.Height
+	if lastHeight <= 0 {
+		lastHeight = style.FontSize
+	}
+	return height - lastHeight + shapedTextLineEm(last, style.FontSize) + 2*last.descenderPad
+}
+
 type shapedTextViewportWindow struct {
 	start        int
 	end          int
@@ -971,6 +1018,8 @@ func ShapedTextViewportLayout(shaped ShapedText, style TextStyleAttrs, selection
 	window := calculateShapedTextViewportWindow(shaped, style, scrollY, viewportHeight)
 
 	var blockAttrs AttrSet
+	blockAttrs.Padding[PAD_BOTTOM] = shaped.Lines[len(shaped.Lines)-1].descenderPad
+	blockAttrs.Padding[PAD_TOP] = blockAttrs.Padding[PAD_BOTTOM]
 	if shaped.BaseDir == RTL {
 		blockAttrs.SelfAlign = AlignEnd
 	}
@@ -1075,6 +1124,7 @@ type GlyphsSegment struct {
 	rubyHeadRoom, rubyTailRoom float32
 	start int
 	length int
+
 }
 
 type Glyph struct {
@@ -1229,7 +1279,7 @@ func produceShapedSegments(runes []rune, dirs []Direction, base TextStyleAttrs, 
 
 	// Family resolution is cached upstream; memoize glyph fallback within this pass.
 	type faceCacheKey struct {
-		aspect FontAspect
+		aspect   FontAspect
 		families uint32
 	}
 	type glyphFaceKey struct {
@@ -1471,90 +1521,94 @@ func lineBreakShapedSegments(allSegments []GlyphsSegment, style TextStyleAttrs, 
 	}
 
 	for i := range lines {
-		line := &lines[i]
-		line.descenderPad = descenderPadForLine(line, style)
-		line.firstCluster = lineFirstCluster(line)
-
-		lineEm := style.FontSize
-		var baseHeight float32
-		n := 0
-		for _, s := range line.Segments {
-			if s.size > lineEm {
-				lineEm = s.size
-			}
-			n += len(s.Glyphs)
-			line.rubyTop = max(line.rubyTop, s.rubyTop)
-			baseHeight = max(baseHeight, s.Height-s.rubyTop)
-			for _, reading := range s.ruby {
-				n += len(reading.Glyphs)
-			}
-		}
-		if lineEm <= 0 {
-			lineEm = style.FontSize
-		}
-		line.lineEm = lineEm + line.rubyTop
-		if line.rubyTop > 0 {
-			line.Height = max(line.Height, baseHeight+line.rubyTop)
-		}
-
-		stamps := make([]glyphStamp, 0, n)
-		runs := make([]GlyphRun, 0, n)
-		var x float32
-		var maxEm float32
-		for _, s := range line.Segments {
-			em := s.size
-			if em <= 0 {
-				em = lineEm
-			}
-			shift := baselineShiftY(lineEm, em)
-			groupX := x
-			for j := range s.Glyphs {
-				g := &s.Glyphs[j]
-				glyphEm := em
-				glyphShift := shift
-				if g.em > 0 {
-					glyphEm = g.em
-					glyphShift = baselineShiftY(lineEm, glyphEm)
-				}
-				paintCluster := g.Cluster
-				if g.em > 0 {
-					paintCluster = g.styleCluster
-				}
-				stamps = append(stamps, glyphStamp{Advance: g.XAdvance, Cluster: paintCluster})
-				runs = append(runs, GlyphRun{
-					Rect:        Rect{Origin: Vec2{x, line.rubyTop}, Size: Vec2{g.XAdvance, glyphEm}},
-					FontId:      g.FontId,
-					GlyphId:     g.GlyphId,
-					GlyphOffset: Vec2{g.Offset[0], g.Offset[1] + glyphShift},
-				})
-				x += g.XAdvance
-				if em > maxEm {
-					maxEm = em
-				}
-			}
-			readingX := groupX + s.rubyX
-			var readingEm float32
-			for _, reading := range s.ruby {
-				readingEm = max(readingEm, reading.size)
-			}
-			for _, reading := range s.ruby {
-				for _, g := range reading.Glyphs {
-					stamps = append(stamps, glyphStamp{Cluster: g.styleCluster})
-					runs = append(runs, GlyphRun{
-						Rect:   Rect{Origin: Vec2{readingX, line.rubyTop - s.rubyTop}, Size: Vec2{g.XAdvance, reading.size}},
-						FontId: g.FontId, GlyphId: g.GlyphId, GlyphOffset: Vec2{g.Offset[0], g.Offset[1] + baselineShiftY(readingEm, reading.size)},
-					})
-					readingX += g.XAdvance
-				}
-			}
-		}
-		line.stamps = stamps
-		line.runs = runs
-		line.runData = ownGlyphRunData(runs)
-		line.maxEm = maxEm + line.rubyTop
+		prepareShapedLinePaint(&lines[i], style)
 	}
 
 	return lines
+}
+
+func prepareShapedLinePaint(line *ShapedTextLine, style TextStyleAttrs) {
+	line.descenderPad = descenderPadForLine(line, style)
+	line.firstCluster = lineFirstCluster(line)
+
+	lineEm := style.FontSize
+	var baseHeight float32
+	n := 0
+	for _, s := range line.Segments {
+		if s.size > lineEm {
+			lineEm = s.size
+		}
+		n += len(s.Glyphs)
+		line.rubyTop = max(line.rubyTop, s.rubyTop)
+		baseHeight = max(baseHeight, s.Height-s.rubyTop)
+		for _, reading := range s.ruby {
+			n += len(reading.Glyphs)
+		}
+	}
+	if lineEm <= 0 {
+		lineEm = style.FontSize
+	}
+	line.lineEm = lineEm + line.rubyTop
+	if line.rubyTop > 0 {
+		line.Height = max(line.Height, baseHeight+line.rubyTop)
+	}
+
+	stamps := make([]glyphStamp, 0, n)
+	runs := make([]GlyphRun, 0, n)
+	var x float32
+	var maxEm float32
+	for _, s := range line.Segments {
+		em := s.size
+		if em <= 0 {
+			em = lineEm
+		}
+		shift := baselineShiftY(lineEm, em)
+		groupX := x
+		for j := range s.Glyphs {
+			g := &s.Glyphs[j]
+			glyphEm := em
+			glyphShift := shift
+			if g.em > 0 {
+				glyphEm = g.em
+				glyphShift = baselineShiftY(lineEm, glyphEm)
+			}
+			paintCluster := g.Cluster
+			if g.em > 0 {
+				paintCluster = g.styleCluster
+			}
+			stamps = append(stamps, glyphStamp{Advance: g.XAdvance, Cluster: paintCluster})
+			runs = append(runs, GlyphRun{
+				Rect:        Rect{Origin: Vec2{x, line.rubyTop}, Size: Vec2{g.XAdvance, glyphEm}},
+				FontId:      g.FontId,
+				GlyphId:     g.GlyphId,
+				GlyphOffset: Vec2{g.Offset[0], g.Offset[1] + glyphShift},
+			})
+			x += g.XAdvance
+			if em > maxEm {
+				maxEm = em
+			}
+		}
+		readingX := groupX + s.rubyX
+		var readingEm float32
+		for _, reading := range s.ruby {
+			readingEm = max(readingEm, reading.size)
+		}
+		for _, reading := range s.ruby {
+			for _, g := range reading.Glyphs {
+				stamps = append(stamps, glyphStamp{Cluster: g.styleCluster})
+				runs = append(runs, GlyphRun{
+					Rect:   Rect{Origin: Vec2{readingX, line.rubyTop - s.rubyTop}, Size: Vec2{g.XAdvance, reading.size}},
+					FontId: g.FontId, GlyphId: g.GlyphId, GlyphOffset: Vec2{g.Offset[0], g.Offset[1] + baselineShiftY(readingEm, reading.size)},
+				})
+				readingX += g.XAdvance
+			}
+		}
+	}
+	line.stamps = stamps
+	line.runs = runs
+	line.runData = ownGlyphRunData(runs)
+	line.maxEm = maxEm + line.rubyTop
+
 }
 
 type Direction byte
@@ -1630,12 +1684,13 @@ var ShapeStats struct {
 }
 
 var lastLargeShape struct {
-	text     string
-	style    TextStyleAttrs
-	maxWidth float32
-	spans    []StyleSpan
-	shaped   ShapedText
-	valid    bool
+	resources *Resources
+	text      string
+	style     TextStyleAttrs
+	maxWidth  float32
+	spans     []StyleSpan
+	shaped    ShapedText
+	valid     bool
 }
 
 // ShapeText shapes text with no soft-wrap width (single long lines until
@@ -1692,7 +1747,9 @@ func shapeTextMaxFlat(text string, style TextStyleAttrs, maxWidth float32, flat 
 	if cached, ok := cache.Get(wKey); ok {
 		ShapeStats.Hits++
 		ShapeStats.ShapeHits++
-		if len(text) > 16*1024 { rememberLargeShape(text, style, wrapWidthLogical(wPx), flat, cached) }
+		if len(text) > 16*1024 {
+			rememberLargeShape(text, style, wrapWidthLogical(wPx), flat, cached)
+		}
 		return cached
 	}
 
@@ -1710,7 +1767,9 @@ func shapeTextMaxFlat(text string, style TextStyleAttrs, maxWidth float32, flat 
 		ShapeStats.ShapeHits++
 		shaped := wrapUnwrapped(u, style, width)
 		cache.Set(wKey, shaped)
-	if len(text) > 16*1024 { rememberLargeShape(text, style, width, flat, shaped) }
+		if len(text) > 16*1024 {
+			rememberLargeShape(text, style, width, flat, shaped)
+		}
 		return shaped
 	}
 
@@ -1723,7 +1782,9 @@ func shapeTextMaxFlat(text string, style TextStyleAttrs, maxWidth float32, flat 
 	unwrappedCache.Set(uKey, u)
 	shaped := wrapUnwrapped(u, style, width)
 	cache.Set(wKey, shaped)
-	if len(text) > 16*1024 { rememberLargeShape(text, style, width, flat, shaped) }
+	if len(text) > 16*1024 {
+		rememberLargeShape(text, style, width, flat, shaped)
+	}
 	return shaped
 }
 
@@ -1795,6 +1856,7 @@ func wrapWidthLogical(px int) float32 {
 }
 
 func rememberLargeShape(text string, style TextStyleAttrs, maxWidth float32, spans []StyleSpan, shaped ShapedText) {
+	lastLargeShape.resources = res
 	lastLargeShape.text = text
 	lastLargeShape.style = style
 	lastLargeShape.maxWidth = maxWidth
@@ -1808,7 +1870,7 @@ func rememberLargeShape(text string, style TextStyleAttrs, maxWidth float32, spa
 // changed range. Insertions, bidi changes, style changes, and reflow fall back
 // to the complete shaping path.
 func tryIncrementalSameWidthShape(runes []rune, style TextStyleAttrs, maxWidth float32, spans []StyleSpan) (ShapedText, bool) {
-	if !lastLargeShape.valid ||
+	if !lastLargeShape.valid || lastLargeShape.resources != res ||
 		len(runes) != len(lastLargeShape.shaped.Runes) ||
 		maxWidth != lastLargeShape.maxWidth ||
 		!fontShapeEqual(style, lastLargeShape.style) ||
@@ -1834,7 +1896,9 @@ func tryIncrementalSameWidthShape(runes []rune, style TextStyleAttrs, maxWidth f
 	for index := from; index < to; index++ {
 		if runes[index] >= 128 || oldRunes[index] >= 128 ||
 			language.LookupScript(runes[index]) != language.LookupScript(oldRunes[index]) ||
-			isSpace(runes[index]) != isSpace(oldRunes[index]) {
+			isSpace(runes[index]) != isSpace(oldRunes[index]) ||
+			!(unicode.IsLetter(runes[index]) && unicode.IsLetter(oldRunes[index]) ||
+				unicode.IsDigit(runes[index]) && unicode.IsDigit(oldRunes[index])) {
 			return ShapedText{}, false
 		}
 	}
@@ -1879,9 +1943,7 @@ func tryIncrementalSameWidthShape(runes []rune, style TextStyleAttrs, maxWidth f
 		}
 		if lineCopied {
 			// Rebuild upstream's cached paint geometry only for this changed line.
-			updatedLines := lineBreakShapedSegments(slices.Clone(line.Segments), style, maxWidth)
-			if len(updatedLines) != 1 { return ShapedText{}, false }
-			*line = updatedLines[0]
+			prepareShapedLinePaint(line, style)
 		}
 	}
 	if !changed {

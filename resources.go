@@ -34,20 +34,20 @@ type Resources struct {
 	// The key does not include epoch. Named-family 0→id is this epoch,
 	// not hashed FontIds — the unwrapped key hashes intern ids.
 	fontLookupEpoch uint64
-	closestFaceMap map[FaceLookupKey]FontId
+	closestFaceMap  map[FaceLookupKey]FontId
 
 	// Text shaping. unwrappedCache is HarfBuzz output (no wrap width).
 	// shapeCache is wrapped lines keyed by unwrapped key + quantized width.
 	// shapeCacheEpoch is the fontLookupEpoch those LRUs were built for.
-	hbfonts           map[FontId]*harfbuzz.Font
-	unwrappedCache    *lru.Cache[uint64, unwrappedShaped]
-	shapeCache        *lru.Cache[uint64, ShapedText]
-	shapeCacheEpoch   uint64
-	largeShapeCache *lru.Cache[uint64, ShapedText]
+	hbfonts             map[FontId]*harfbuzz.Font
+	unwrappedCache      *lru.Cache[uint64, unwrappedShaped]
+	shapeCache          *lru.Cache[uint64, ShapedText]
+	shapeCacheEpoch     uint64
+	largeShapeCache     *lru.Cache[uint64, ShapedText]
 	largeUnwrappedCache *lru.Cache[uint64, unwrappedShaped]
-	segmentShapeCache *lru.Cache[uint64, GlyphsSegment]
-	bidiLineCache *lru.Cache[string, []Direction]
-	coloredGlyphCache *lru.Cache[coloredGlyphKey, *GlyphRunData]
+	segmentShapeCache   *lru.Cache[uint64, GlyphsSegment]
+	bidiLineCache       *lru.Cache[string, []Direction]
+	coloredGlyphCache   *lru.Cache[coloredGlyphKey, *GlyphRunData]
 
 	// CachedMeasure results (hash(key)+maxSize+host salts → size)
 	measureCache *lru.Cache[uint64, Vec2]
@@ -97,10 +97,10 @@ type Resources struct {
 // for DirListing / ReadFileContent caches.
 func NewResources() *Resources {
 	r := &Resources{
-		segmentShapeCache: lru.New[uint64, GlyphsSegment](lru.WithCapacity(524288)),
-		largeShapeCache: lru.New[uint64, ShapedText](lru.WithCapacity(2)),
+		segmentShapeCache:   lru.New[uint64, GlyphsSegment](lru.WithCapacity(524288)),
+		largeShapeCache:     lru.New[uint64, ShapedText](lru.WithCapacity(2)),
 		largeUnwrappedCache: lru.New[uint64, unwrappedShaped](lru.WithCapacity(2)),
-		bidiLineCache: lru.New[string, []Direction](lru.WithCapacity(65536)),
+		bidiLineCache:       lru.New[string, []Direction](lru.WithCapacity(65536)),
 		faces:               make([]FontFace, 1),
 		faceMap:             make(map[FaceLookupKey]FontId),
 		closestFaceMap:      make(map[FaceLookupKey]FontId),
