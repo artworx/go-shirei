@@ -248,17 +248,16 @@ func LoadImage(fpath string) *ImageData {
 	}
 
 	img := new(ImageData)
-	const threshold = 500 * 1024
-	info, statErr := os.Stat(fpath)
+	_, statErr := os.Stat(fpath)
 	if statErr != nil {
 		_setFileCacheContent(fpath, cacheType, img)
 		putImage(fpath, img)
 		return img
 	}
-	if info.Size() < threshold {
+	if GetHost().HeadlessRender {
 		content := ReadFileContent(fpath)
 		img.Config, _, _ = image.DecodeConfig(bytes.NewReader(content))
-		// small enough size; load immediately
+		// Offline snapshots need completed pixels before painting.
 		decoded, _, _ := image.Decode(bytes.NewReader(content))
 		rgba := imageToRGBA(decoded)
 		if rgba != nil {
@@ -266,8 +265,8 @@ func LoadImage(fpath string) *ImageData {
 			img.Generation = nextImageGeneration()
 		}
 	} else {
-		// Read only the header on the frame thread. Large reads and decodes
-		// happen in the background so image previews cannot stall a frame.
+		// Read only the header on the frame thread. Even small compressed
+		// files can expand into large images, so all pixel decoding is asynchronous.
 		if file, err := os.Open(fpath); err == nil {
 			img.Config, _, _ = image.DecodeConfig(file)
 			_ = file.Close()

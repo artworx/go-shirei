@@ -34,6 +34,9 @@ func softScope(s string) any {
 }
 
 func softRenderImage(scope string, w, h int, scale float32, fn FrameFn) *image.RGBA {
+	wasHeadless := ui.Host.HeadlessRender
+	ui.Host.HeadlessRender = true
+	defer func() { ui.Host.HeadlessRender = wasHeadless }()
 	ui.Host.WindowSize = Vec2{float32(w), float32(h)}
 	ui.Host.WindowScale = scale
 	ui.Host.HeadlessRender = true
@@ -242,7 +245,7 @@ func TestSoftRenderImage(t *testing.T) {
 	})
 }
 
-// imageIdForTest loads the image (synchronously for small files) and returns its id.
+// imageIdForTest loads a snapshot image and returns its id.
 func imageIdForTest(path string) ImageId {
 	LoadImage(path)
 	return GetImageId(path)
