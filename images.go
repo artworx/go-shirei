@@ -340,8 +340,8 @@ func UseImage(key string, rgba *image.RGBA) ImageId {
 }
 
 // UseOpaqueImage is UseImage for a caller-known fully opaque raster. The
-// promise enables a SIMD paint path in software backends without rescanning the
-// same generated image every frame.
+// promise skips the initial opacity scan and enables opaque row copies in
+// software backends. Upstream caches pixel ordering and subsequent opacity checks.
 func UseOpaqueImage(key string, rgba *image.RGBA) ImageId {
 	return useImage(key, rgba, true)
 }
