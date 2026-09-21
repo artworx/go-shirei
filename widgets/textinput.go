@@ -355,6 +355,13 @@ func computeCursorIndexInText(pos Vec2, shaped ShapedText) int {
 // ComputeCursorIndex maps a mouse position in a content rect to a rune index
 // in shaped text, accounting for scroll offset.
 func ComputeCursorIndex(contentRect Rect, pos Vec2, scroll Vec2, shaped ShapedText) int {
+	return ComputeCursorIndexAligned(contentRect, pos, scroll, shaped, AlignUnset)
+}
+
+// ComputeCursorIndexAligned maps a mouse position to a rune index after
+// applying the same per-line horizontal alignment as shaped-text layout.
+// AlignUnset follows the shaped text's base direction.
+func ComputeCursorIndexAligned(contentRect Rect, pos Vec2, scroll Vec2, shaped ShapedText, alignment Alignment) int {
 	// for now just a linear scan
 	pos = Vec2Sub(pos, contentRect.Origin)
 
@@ -366,6 +373,23 @@ func ComputeCursorIndex(contentRect Rect, pos Vec2, scroll Vec2, shaped ShapedTe
 	// the box shows the text shifted left by the scroll offset; map the
 	// clamped viewport point into text coordinates
 	pos = Vec2Add(pos, scroll)
+	if len(shaped.Lines) > 0 {
+		line, _, _ := lineAtY(pos[1], shaped)
+		resolved := alignment
+		if resolved == AlignUnset {
+			resolved = AlignStart
+			if shaped.BaseDir == RTL {
+				resolved = AlignEnd
+			}
+		}
+		remaining := max(float32(0), contentRect.Size[0]-line.Width)
+		switch resolved {
+		case AlignMiddle:
+			pos[0] -= remaining * .5
+		case AlignEnd:
+			pos[0] -= remaining
+		}
+	}
 
 	return computeCursorIndexInText(pos, shaped)
 }
