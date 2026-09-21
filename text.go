@@ -540,10 +540,10 @@ func shapedTextLineMetrics(line *ShapedTextLine, style TextStyleAttrs, spans []S
 }
 
 func ShapedTextLineLayout(line *ShapedTextLine, style TextStyleAttrs, spans []StyleSpan, baseDir Direction, selectionFrom int, selectionTo int, nextLinePaddingTop *f32) {
-	shapedTextLineLayoutColor(line, style, spans, baseDir, selectionFrom, selectionTo, nextLinePaddingTop, SelectionColor)
+	shapedTextLineLayoutAligned(line, style, spans, baseDir, AlignUnset, selectionFrom, selectionTo, nextLinePaddingTop, SelectionColor)
 }
 
-func shapedTextLineLayoutColor(line *ShapedTextLine, style TextStyleAttrs, spans []StyleSpan, baseDir Direction, selectionFrom int, selectionTo int, nextLinePaddingTop *f32, selectionColor Vec4) {
+func shapedTextLineLayoutAligned(line *ShapedTextLine, style TextStyleAttrs, spans []StyleSpan, baseDir Direction, alignment Alignment, selectionFrom int, selectionTo int, nextLinePaddingTop *f32, selectionColor Vec4) {
 	// Only this line's spans can affect its paint geometry. In particular,
 	// hashing all document colors per visible line defeats viewport layout.
 	if len(spans) > 0 {
@@ -587,8 +587,9 @@ func shapedTextLineLayoutColor(line *ShapedTextLine, style TextStyleAttrs, spans
 	lineAttrs.Padding[PAD_TOP] = leading
 	*nextLinePaddingTop = line.Height - lineEm
 
-	// TODO: allow text attribute to control alignment
-	if baseDir == RTL {
+	if alignment != AlignUnset {
+		lineAttrs.MainAlign = alignment
+	} else if baseDir == RTL {
 		lineAttrs.MainAlign = AlignEnd
 	}
 
@@ -815,29 +816,41 @@ func descenderPadForLine(line *ShapedTextLine, style TextStyleAttrs) f32 {
 }
 
 func ShapedTextLayout(shaped ShapedText, style TextStyleAttrs, selectionFrom int, selectionTo int, spans ...StyleSpan) {
-	// Compose overlapping spans once; layout only sees disjoint full styles.
-	flat := effectiveSpans(style, spans, len(shaped.Runes))
-	shapedTextLayoutFlat(shaped, style, selectionFrom, selectionTo, flat, string(shaped.Runes), SelectionColor)
+	ShapedTextLayoutAligned(shaped, style, AlignUnset, selectionFrom, selectionTo, spans...)
+}
+
+// ShapedTextLayoutAligned lays out shaped text with every visual line aligned
+// within the available width. AlignUnset preserves direction-aware alignment.
+func ShapedTextLayoutAligned(shaped ShapedText, style TextStyleAttrs, alignment Alignment, selectionFrom int, selectionTo int, spans ...StyleSpan) {
+	ShapedTextLayoutStyledAligned(shaped, style, alignment, selectionFrom, selectionTo, SelectionColor, spans...)
 }
 
 // ShapedTextLayoutStyled draws a shaped paragraph with an explicit selection color.
 // Transparent zero is literal; the package SelectionColor is not consulted.
 func ShapedTextLayoutStyled(shaped ShapedText, style TextStyleAttrs, selectionFrom, selectionTo int, selectionColor Vec4, spans ...StyleSpan) {
-	flat := effectiveSpans(style, spans, len(shaped.Runes))
-	shapedTextLayoutFlat(shaped, style, selectionFrom, selectionTo, flat, string(shaped.Runes), selectionColor)
+	ShapedTextLayoutStyledAligned(shaped, style, AlignUnset, selectionFrom, selectionTo, selectionColor, spans...)
 }
 
-// shapedTextLayoutFlat is ShapedTextLayout after span flattening: spans must
-// be effectiveSpans output. Text calls it directly with the spans it already
-// resolved for shaping.
+// ShapedTextLayoutStyledAligned combines explicit line alignment and selection paint.
+func ShapedTextLayoutStyledAligned(shaped ShapedText, style TextStyleAttrs, alignment Alignment, selectionFrom, selectionTo int, selectionColor Vec4, spans ...StyleSpan) {
+	flat := effectiveSpans(style, spans, len(shaped.Runes))
+	shapedTextLayoutFlatAligned(shaped, style, alignment, selectionFrom, selectionTo, flat, string(shaped.Runes), selectionColor)
+}
+
+// shapedTextLayoutFlat consumes spans already resolved for shaping.
 func shapedTextLayoutFlat(shaped ShapedText, style TextStyleAttrs, selectionFrom int, selectionTo int, spans []StyleSpan, source string, selectionColor Vec4) {
+	shapedTextLayoutFlatAligned(shaped, style, AlignUnset, selectionFrom, selectionTo, spans, source, selectionColor)
+}
+
+func shapedTextLayoutFlatAligned(shaped ShapedText, style TextStyleAttrs, alignment Alignment, selectionFrom int, selectionTo int, spans []StyleSpan, source string, selectionColor Vec4) {
 	ui.anyAccess = true
 	// Block size is content-driven; wrap constraint is the parent's cascaded
 	// MaxSize (set by Text under a max-width container, or by an explicit
 	// MaxWidth host). Soft-wrap line breaks were already applied at shape time.
 	var blockAttrs AttrSet
-	// TODO: allow text attribute to control alignment
-	if shaped.BaseDir == RTL {
+	if alignment != AlignUnset {
+		blockAttrs.ExpandAcross = true
+	} else if shaped.BaseDir == RTL {
 		blockAttrs.SelfAlign = AlignEnd
 	}
 	if n := len(shaped.Lines); n > 0 {
@@ -857,7 +870,9 @@ func shapedTextLayoutFlat(shaped ShapedText, style TextStyleAttrs, selectionFrom
 			lineEm = style.FontSize
 		}
 		blockAttrs.Row = true
-		if shaped.BaseDir == RTL {
+		if alignment != AlignUnset {
+			blockAttrs.MainAlign = alignment
+		} else if shaped.BaseDir == RTL {
 			blockAttrs.MainAlign = AlignEnd
 		}
 		blockAttrs.MinSize[0] = line.Width
@@ -879,7 +894,7 @@ func shapedTextLayoutFlat(shaped ShapedText, style TextStyleAttrs, selectionFrom
 		ui.current.accessText = source
 		for idx := range shaped.Lines {
 			line := &shaped.Lines[idx]
-			shapedTextLineLayoutColor(line, style, spans, shaped.BaseDir, selectionFrom, selectionTo, &nextLinePaddingTop, selectionColor)
+			shapedTextLineLayoutAligned(line, style, spans, shaped.BaseDir, alignment, selectionFrom, selectionTo, &nextLinePaddingTop, selectionColor)
 		}
 	})
 }
