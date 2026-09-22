@@ -584,6 +584,14 @@ func FontSize(h float32) TextStyleFn {
 	}
 }
 
+// LineHeight sets the preferred baseline-to-baseline distance in logical
+// pixels. Zero restores the selected font's natural line metrics.
+func LineHeight(h float32) TextStyleFn {
+	return func(st *TextStyleAttrs) {
+		st.LineHeight = h
+	}
+}
+
 // Fonts sets preferred font families, tried in order ahead of the defaults.
 // The combined list is interned; repeating Fonts(Monospace...) shares one
 // canonical list rather than allocating a fresh slice each call.
