@@ -53,6 +53,33 @@ func TestShapeTextNewlineHasNoAdvance(t *testing.T) {
 	}
 }
 
+func TestShapeTextUsesExplicitLineHeight(t *testing.T) {
+	attrs := requireTextShaping(t)
+	attrs.LineHeight = attrs.FontSize * 1.6
+	shaped := ShapeText("first line\nsecond line", attrs)
+	if len(shaped.Lines) != 2 {
+		t.Fatalf("line count = %d, want 2", len(shaped.Lines))
+	}
+	for index, line := range shaped.Lines {
+		if line.Height < attrs.LineHeight {
+			t.Fatalf("line %d height = %v, want at least %v", index, line.Height, attrs.LineHeight)
+		}
+	}
+}
+
+func TestShapeTextWrapsUnspacedCJKAtUnicodeLineBreaks(t *testing.T) {
+	attrs := requireTextShaping(t)
+	text := "日本語の文章を空白なしで折り返します"
+	natural := ShapeText(text, attrs)
+	if len(natural.Lines) != 1 || natural.Lines[0].Width <= 0 {
+		t.Fatalf("natural shape = %+v", natural.Lines)
+	}
+	shaped := ShapeTextMax(text, attrs, natural.Lines[0].Width/3)
+	if len(shaped.Lines) < 2 {
+		t.Fatalf("line count = %d, want Unicode line wrapping", len(shaped.Lines))
+	}
+}
+
 func TestShapeCacheStampsAreGeometry(t *testing.T) {
 	attrs := requireTextShaping(t)
 	shaped := ShapeText("Hello", attrs)
