@@ -17,6 +17,7 @@ import (
 	"github.com/cespare/xxhash/v2"
 	"github.com/go-text/typesetting/harfbuzz"
 	"github.com/go-text/typesetting/language"
+	"github.com/go-text/typesetting/segmenter"
 )
 
 type TextStyleAttrs struct {
@@ -29,6 +30,9 @@ type TextStyleAttrs struct {
 
 	TextColor Vec4
 	FontSize  f32
+	// LineHeight is the preferred baseline-to-baseline distance in logical
+	// pixels. Zero keeps the selected font's natural line metrics.
+	LineHeight f32
 
 	// Background is a highlight painted behind glyphs (zero = none).
 	// Distinct from layout AttrSet.Background.
@@ -148,6 +152,9 @@ func overlayStyle(dst, spanStyle, base TextStyleAttrs) TextStyleAttrs {
 	}
 	if spanStyle.FontSize != base.FontSize {
 		dst.FontSize = spanStyle.FontSize
+	}
+	if spanStyle.LineHeight != base.LineHeight {
+		dst.LineHeight = spanStyle.LineHeight
 	}
 	if spanStyle.Background != base.Background {
 		dst.Background = spanStyle.Background
@@ -301,6 +308,7 @@ func resolveStyleRuns(base TextStyleAttrs, spans []StyleSpan, textLen int) []sty
 func textStylesEqual(a, b TextStyleAttrs) bool {
 	return a.TextColor == b.TextColor &&
 		a.FontSize == b.FontSize &&
+		a.LineHeight == b.LineHeight &&
 		a.Background == b.Background &&
 		a.Underline == b.Underline &&
 		a.Strike == b.Strike &&
@@ -310,6 +318,7 @@ func textStylesEqual(a, b TextStyleAttrs) bool {
 
 func fontShapeEqual(a, b TextStyleAttrs) bool {
 	return a.FontSize == b.FontSize &&
+		a.LineHeight == b.LineHeight &&
 		a.FontAspect == b.FontAspect &&
 		familyListEq(a.fontFamilies, b.fontFamilies)
 }
@@ -1288,6 +1297,13 @@ func shapeSegmentUncached(props GlyphSegmentProps, text []rune, start, length in
 
 func produceShapedSegments(runes []rune, dirs []Direction, base TextStyleAttrs, spans []StyleSpan) []GlyphsSegment {
 	var allSegments = make([]GlyphsSegment, 0, len(runes)/2)
+	lineBreakBefore := make([]bool, len(runes)+1)
+	var unicodeSegmenter segmenter.Segmenter
+	unicodeSegmenter.Init(runes)
+	for lines := unicodeSegmenter.LineIterator(); lines.Next(); {
+		line := lines.Line()
+		lineBreakBefore[line.Offset+len(line.Text)] = true
+	}
 
 	var lineNo int
 
@@ -1368,7 +1384,7 @@ func produceShapedSegments(runes []rune, dirs []Direction, base TextStyleAttrs, 
 			segmentNext.sc = segment.sc
 		}
 
-		if segmentNext != segment {
+		if segmentNext != segment || lineBreakBefore[i] {
 			length := i - start
 			allSegments = append(allSegments, shapeSegment(segment, runes, start, length))
 			segment = segmentNext
@@ -1384,6 +1400,9 @@ func produceShapedSegments(runes []rune, dirs []Direction, base TextStyleAttrs, 
 
 func lineBreakShapedSegments(allSegments []GlyphsSegment, style TextStyleAttrs, maxWidth float32) []ShapedTextLine {
 	lineHeight := func(height float32) float32 {
+		if style.LineHeight > 0 {
+			height = max(height, style.LineHeight)
+		}
 		if height <= 0 {
 			return style.FontSize
 		}
@@ -1818,6 +1837,7 @@ func hashUnwrappedShapeKey(text string, style TextStyleAttrs, flat []StyleSpan) 
 	d.Reset()
 	d.WriteString(text)
 	Hash(&d, &style.FontSize)
+	Hash(&d, &style.LineHeight)
 	Hash(&d, &style.FontAspect)
 	hashFontFamilies(&d, style.fontFamilies)
 	for _, sp := range flat {
@@ -1827,6 +1847,7 @@ func hashUnwrappedShapeKey(text string, style TextStyleAttrs, flat []StyleSpan) 
 		Hash(&d, &sp.From)
 		Hash(&d, &sp.To)
 		Hash(&d, &sp.Style.FontSize)
+		Hash(&d, &sp.Style.LineHeight)
 		Hash(&d, &sp.Style.FontAspect)
 		hashFontFamilies(&d, sp.Style.fontFamilies)
 	}

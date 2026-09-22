@@ -466,6 +466,11 @@ func TestFontShapeEqual(t *testing.T) {
 	if fontShapeEqual(a, b) {
 		t.Fatal("weight is shaping tier")
 	}
+	b = a
+	b.LineHeight = a.FontSize * 1.5
+	if fontShapeEqual(a, b) {
+		t.Fatal("line height is layout tier")
+	}
 	if !familyListEq(a.fontFamilies, DefaultTextStyle().fontFamilies) {
 		t.Fatal("sanity")
 	}
