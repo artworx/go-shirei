@@ -1,5 +1,9 @@
 # Daymark fork: v0.7.0 patch audit
 
+Status: Historical audit of the revisions below. Branch, publication, test counts,
+and benchmark results describe that audit; inspect current Git state and rerun
+applicable checks for a new change.
+
 Updated 2026-09-19 from `364660b` (v0.6.0) plus the local patch stack through
 `8f7ea06` to upstream `53ac833` (latest upstream master, v0.7.0).
 The original checkout is preserved on `master`; the updated checkout is on
