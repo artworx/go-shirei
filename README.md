@@ -1,5 +1,7 @@
 # Shirei
 
+For repository development guidance, read [AGENTS.md](AGENTS.md).
+
 Shirei is a cross-platform GUI framework for Go, designed as a lightweight alternative to
 web-based approaches, with a focus on development ergonomics.
 
