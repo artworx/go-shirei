@@ -295,9 +295,15 @@ var (
 	pendingText        string
 	pendingPaste       string
 	hasPendingPaste    bool
+	pendingMouseEdges  []mouseEdge
 	frameHash          uint64
 	softRenderer       shirei.SoftRenderer
 )
+
+type mouseEdge struct {
+	action shirei.MouseAction
+	button shirei.MouseButton
+}
 
 func produceFrame(w, h float64) {
 	shirei.GetHost().WindowSize = shirei.Vec2{float32(w), float32(h)}
@@ -331,11 +337,12 @@ func produceFrame(w, h float64) {
 		openURL(out.OpenURL)
 	}
 
-	setWantsFrame(out.NextFrameRequested || len(accessPending) > 0)
+	setWantsFrame(out.NextFrameRequested || len(accessPending) > 0 || len(pendingMouseEdges) > 0)
 	frameHash = out.SurfacesHash
 }
 
 func runInputFrame(fn shirei.FrameFn) shirei.FrameOutputData {
+	flushPendingMouseEdge()
 	// AppKit can deliver flagsChanged (modifier release) before the display
 	// tick handles the pending keyDown. Use the modifiers from that key event
 	// for this frame, then restore the live held-key state.
@@ -348,6 +355,19 @@ func runInputFrame(fn shirei.FrameFn) shirei.FrameOutputData {
 	}
 	defer func() { input.Modifiers = heldModifiers }()
 	return shirei.RunFrameFn(fn)
+}
+
+func flushPendingMouseEdge() {
+	if len(pendingMouseEdges) == 0 {
+		return
+	}
+	// AppKit may deliver both halves of a tap before the display tick. Preserve
+	// each edge on its own frame so PressAction observes down before up.
+	edge := pendingMouseEdges[0]
+	copy(pendingMouseEdges, pendingMouseEdges[1:])
+	pendingMouseEdges = pendingMouseEdges[:len(pendingMouseEdges)-1]
+	shirei.GetFrameInput().Mouse = edge.action
+	shirei.GetInputState().MouseButton = edge.button
 }
 
 func flushPendingFrameText() {
@@ -395,9 +415,15 @@ func onMouse(x, y float64, action, button int) {
 
 	switch action {
 	case mouseDown:
-		shirei.GetFrameInput().Mouse = shirei.MouseClick
+		pendingMouseEdges = append(pendingMouseEdges, mouseEdge{
+			action: shirei.MouseClick,
+			button: shirei.MouseButton(button),
+		})
 	case mouseUp:
-		shirei.GetFrameInput().Mouse = shirei.MouseRelease
+		pendingMouseEdges = append(pendingMouseEdges, mouseEdge{
+			action: shirei.MouseRelease,
+			button: shirei.MouseButton(button),
+		})
 	}
 }
 
