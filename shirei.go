@@ -1534,6 +1534,12 @@ func revealDelta(f0, f1, v0, v1 float32) float32 {
 	}
 	fs := f1 - f0
 	if fs >= vs {
+		// Large focus targets (for example a selectable document) cannot fit
+		// in the port. Keep the visible portion in place so gaining focus
+		// does not move text away from the pointer during selection.
+		if f0 < v1 && f1 > v0 {
+			return 0
+		}
 		return f0 - v0
 	}
 	if f0 < v0 {
@@ -1550,7 +1556,8 @@ const revealScrollEps float32 = 0.5
 // revealFocusedInScrollPorts pans ScrollOnInput ancestors so a newly focused
 // node is inside each port's content clip. Offset is written onto this pass's
 // rd so a settle pass restores it. No-op if focus did not change, the node
-// was not laid out, or it is already visible.
+// was not laid out, or it is already visible. Targets larger than a port
+// keep their current position while any portion remains visible.
 func revealFocusedInScrollPorts() {
 	if ui.focused == nil || ui.focused == ui.prevFocused {
 		return

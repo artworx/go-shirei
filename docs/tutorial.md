@@ -749,6 +749,9 @@ Tab and Shift+Tab cycle among those containers in source order. Space or
 Enter activates a focused button or toggle; arrows move a focused slider
 or segmented control. For your own focusable widgets, the same primitives
 are available: `ModAttrs(Focusable)`, `HasFocus()`, `Focus()`, `Blur()`.
+Newly focused controls scroll into view inside `ScrollOnInput` containers.
+When the focus target is larger than the viewport, an already visible portion
+stays in place so clicking selectable content does not move it under the pointer.
 Keyboard state is queried like everything else: `FrameInput.Key` (pressed
 this frame), `FrameInput.Text` (text typed this frame, IME-aware),
 `InputState.Modifiers`, `InputState.DownKeys`.

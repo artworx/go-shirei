@@ -43,7 +43,22 @@ Translated editor glyph blocks have explicit full-content bounds and no inner
 clip; their viewport still clips them. Selection uses a stable outer container
 when upstream switches between single-line and selected-text layout structures.
 
-## Validation
+## September 30, 2026: focus reveal for oversized content
+
+Focus reveal preserves the current scroll offset on an axis when a focus target
+is at least as large as the scroll port and intersects its content clip. This
+prevents clicking a long Daymark Ask Hindsight answer from snapping its top into
+view and changing the text under a selection drag. Small controls and entirely
+off-screen targets retain the existing reveal behavior. Framework regression
+coverage checks visible and off-screen bounds; the desktop regression exercises
+scrolling, selection and copy through the Ask answer card in both themes.
+
+Validated on macOS/arm64 with Go 1.27.0: desktop and Android bridge suites pass;
+the framework suite passes except for 13 snapshot mismatches. Each mismatch
+reproduces with byte-identical PNGs using an overlay of the unchanged framework
+source. Light and dark selected-answer captures were inspected.
+
+## Validation of the September 19 upgrade
 
 - Daymark: `go test ./...` passes, 1,701 tests across 36 packages.
 - Daymark: `make build build-darwin build-windows` succeeds for Linux/amd64,

@@ -2,6 +2,61 @@ package shirei
 
 import "testing"
 
+func TestFocusRevealPreservesVisibleOversizedContent(t *testing.T) {
+	ResetInputSession()
+	t.Cleanup(ResetInputSession)
+	ui.Host.WindowSize = Vec2{400, 300}
+	var pane, content ContainerId
+	view := func() {
+		pane = Container(Attrs(Viewport, FixSize(400, 300), Clip), func() {
+			ScrollOnInput()
+			content = Container(Attrs(Focusable, FixSize(400, 1200)), func() { FocusOnClick() })
+		})
+	}
+	ui.Host.Input.MousePoint = Vec2{100, 100}
+	for range 3 {
+		RunFrameFn(view)
+	}
+	ui.Host.FrameInput.Scroll = Vec2{0, 400}
+	RunFrameFn(view)
+	before := GetScrollOffsetOf(pane)
+	if before[1] == 0 {
+		t.Fatal("pane did not scroll")
+	}
+	ui.Host.FrameInput.Scroll = Vec2{}
+	ui.Host.FrameInput.Mouse = MouseClick
+	RunFrameFn(view)
+	if !IdHasFocus(content) {
+		t.Fatal("click did not focus the content")
+	}
+	if after := GetScrollOffsetOf(pane); after != before {
+		t.Fatalf("focus on visible oversized content moved scroll from %v to %v", before, after)
+	}
+}
+
+func TestRevealDelta(t *testing.T) {
+	for _, tt := range []struct {
+		name           string
+		from, to, want float32
+	}{
+		{"visible", 120, 180, 0},
+		{"small above", 80, 140, -20},
+		{"small below", 260, 320, 20},
+		{"oversized straddling", -500, 700, 0},
+		{"oversized partly above", -500, 200, 0},
+		{"oversized partly below", 200, 700, 0},
+		{"oversized entirely above", -500, 100, -600},
+		{"oversized entirely below", 300, 900, 200},
+		{"viewport sized visible", 100, 300, 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := revealDelta(tt.from, tt.to, 100, 300); got != tt.want {
+				t.Fatalf("revealDelta(%v, %v, 100, 300) = %v, want %v", tt.from, tt.to, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRunFrameTabWithNoFocusableControls(t *testing.T) {
 	tests := []struct {
 		name      string
