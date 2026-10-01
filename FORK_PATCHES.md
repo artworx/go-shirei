@@ -146,3 +146,21 @@ go test . -run '^$' -bench 'BenchmarkBlit.*Diagram' \
 Daymark's release workflow still clones the published fork's `master`. Publishing
 this local update requires coordinating the fork and app changes; the local
 build uses the updated sibling checkout through its existing module replacement.
+
+## October 2, 2026: Cocoa quick-click edge delivery
+
+The Cocoa backend queues mouse button edges and delivers one edge per frame.
+AppKit can report both mouse-down and mouse-up for a trackpad tap before the
+display tick; storing a single transient action allowed the release to replace
+the press, so `PressAction` never completed. Ordered delivery makes tap-to-click
+and physical clicks equivalent for primary and secondary buttons while leaving
+macOS responsible for gesture recognition.
+
+Regression coverage submits down and up without an intervening frame, verifies
+primary and secondary edge order, completes one ordinary `PressAction`, and
+checks that single edges do not repeat. On macOS/arm64 with Go 1.27.0, the Cocoa
+package and race suites pass, as do all 1,946 Daymark desktop tests. A native
+window smoke verifies primary click, secondary click, and drag-release. The full
+framework run retains 13 pre-existing snapshot mismatches; its unrelated Metal
+glyph-clip test also reproduces a Go runtime “pointer to free object” failure
+when run alone.
