@@ -778,6 +778,9 @@ focus. Each UI has its own flag, initially off.
 Text editors use `HasFocus` for their caret, selection, and editing appearance
 even after a mouse click.
 
+Newly focused controls scroll into view inside `ScrollOnInput` containers.
+When the focus target is larger than the viewport, an already visible portion
+stays in place so clicking selectable content does not move it under the pointer.
 Keyboard state is queried like everything else: `FrameInput.Key` (pressed
 this frame), `FrameInput.Text` (text typed this frame, IME-aware),
 `InputState.Modifiers`, `InputState.DownKeys`.
