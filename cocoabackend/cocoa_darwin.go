@@ -325,7 +325,7 @@ func produceFrame(w, h float64) {
 	flushPendingFrameText()
 	flushAccessAction()
 
-	out := shirei.RunFrameFnLocked(currentWindow.frameFn)
+	out := runInputFrameWith(currentWindow.frameFn, shirei.RunFrameFnLocked)
 	if out.AccessChanged {
 		updateAccess(out.Access)
 	}
@@ -351,6 +351,25 @@ func produceFrame(w, h float64) {
 
 	setWantsFrame(out.NextFrameRequested || len(currentWindow.accessPending) > 0)
 	currentWindow.frameHash = out.SurfacesHash
+}
+
+func runInputFrame(fn shirei.FrameFn) shirei.FrameOutputData {
+	return runInputFrameWith(fn, shirei.RunFrameFn)
+}
+
+func runInputFrameWith(fn shirei.FrameFn, run func(shirei.FrameFn) shirei.FrameOutputData) shirei.FrameOutputData {
+	// AppKit can deliver flagsChanged (modifier release) before the display
+	// tick handles the pending keyDown. Use the modifiers from that key event
+	// for this frame, then restore the live held-key state.
+	combo := currentWindow.pendingKeyCombo
+	currentWindow.pendingKeyCombo = shirei.KeyCombo{}
+	input := shirei.GetInputState()
+	heldModifiers := input.Modifiers
+	if combo.Key != shirei.KeyCodeNone && combo.Key == shirei.GetFrameInput().Key {
+		input.Modifiers = combo.Mod
+	}
+	defer func() { input.Modifiers = heldModifiers }()
+	return run(fn)
 }
 
 func flushPendingFrameText() {
@@ -459,6 +478,7 @@ func setCompositionFromUTF16Offsets(text string, startUTF16, endUTF16 int) {
 func onKeyDown(vkey int, bare string) {
 	if code := mapVKey(uint16(vkey), bare); code != shirei.KeyCodeNone {
 		shirei.GetFrameInput().Key = code
+		currentWindow.pendingKeyCombo = shirei.Combo(code, shirei.GetInputState().Modifiers)
 		g.SliceAddUniq(&shirei.GetInputState().DownKeys, code)
 	}
 }

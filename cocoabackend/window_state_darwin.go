@@ -41,6 +41,7 @@ type windowState struct {
 	lastProducedW      float32
 	lastProducedH      float32
 	haveFrame          bool
+	pendingKeyCombo shirei.KeyCombo
 	pendingText        string
 	pendingPaste       string
 	hasPendingPaste    bool

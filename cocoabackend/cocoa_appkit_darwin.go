@@ -290,6 +290,7 @@ func registerClasses() error {
 			{Cmd: sel("rightMouseUp:"), Fn: viewRightMouseUp},
 			{Cmd: sel("scrollWheel:"), Fn: viewScrollWheel},
 			{Cmd: sel("flagsChanged:"), Fn: viewFlagsChanged},
+			{Cmd: sel("performKeyEquivalent:"), Fn: viewPerformKeyEquivalent},
 			{Cmd: sel("keyDown:"), Fn: viewKeyDown},
 			{Cmd: sel("keyUp:"), Fn: viewKeyUp},
 			{Cmd: sel("insertText:"), Fn: viewInsertText},
@@ -541,6 +542,17 @@ func viewFlagsChanged(self objc.ID, _ objc.SEL, e objc.ID) {
 
 	onModifiers(objc.Send[uint](e, sel("modifierFlags")))
 	noteInput()
+}
+
+func viewPerformKeyEquivalent(self objc.ID, cmd objc.SEL, e objc.ID) bool {
+	// AppKit otherwise consumes Control-Tab in its native key-view loop before
+	// keyDown: reaches our single view. Let the Shirei app handle these combos.
+	mods := objc.Send[uint](e, sel("modifierFlags")) & (nsControl | nsShift | nsOption | nsCommand)
+	if objc.Send[uint16](e, sel("keyCode")) == vkTab && (mods == nsControl || mods == nsControl|nsShift) {
+		viewKeyDown(self, sel("keyDown:"), e)
+		return true
+	}
+	return objc.SendSuper[bool](self, cmd, e)
 }
 
 func viewKeyDown(self objc.ID, _ objc.SEL, e objc.ID) {
