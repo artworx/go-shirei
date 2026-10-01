@@ -58,6 +58,36 @@ the framework suite passes except for 13 snapshot mismatches. Each mismatch
 reproduces with byte-identical PNGs using an overlay of the unchanged framework
 source. Light and dark selected-answer captures were inspected.
 
+## October 1, 2026: Control-Tab delivery and shortcut focus
+
+The Cocoa view now handles Ctrl+Tab and Ctrl+Shift+Tab in
+`performKeyEquivalent:` and forwards them to the normal key-down path. AppKit
+can otherwise consume these keys in its native key-view loop before `keyDown:`
+reaches Shirei. Other key equivalents continue through the superclass.
+
+Shirei's own control-focus ring also runs only for plain Tab and Shift+Tab.
+Modified Tab shortcuts reach the application without scheduling a focus change
+before its frame builder can consume the key.
+
+Cocoa retains the modifier flags from the pending `keyDown` while delivering
+that key to the application frame. Previously a `flagsChanged` release before
+the display tick replaced Ctrl+Tab or Ctrl+Shift+Tab with plain Tab. The frame
+temporarily uses the captured key modifiers, then restores the live held-key
+state; this does not change the backend's existing single pending-key policy.
+
+Regression coverage constructs native NSEvents and dispatches them through the
+registered view's `performKeyEquivalent:` selector, then delivers the frame
+after modifier release. Both shortcuts fail with the previous AppKit source
+and pass with the override. Separate tests cover key down/up modifier retention,
+unhandled key equivalents, and control-focus preservation when the application
+consumes modified Tab. Plain Tab and Shift+Tab retain their existing behavior.
+
+`go test ./cocoabackend`, `go test -race ./cocoabackend`, and all 1,889 Daymark
+desktop tests pass. The full framework suite has 13 snapshot differences;
+their actual images are byte-identical with all three keyboard changes removed
+through a source overlay. The native-selector tests do not open a window;
+end-to-end verification in the user's `go run .` window remains outstanding.
+
 ## Validation of the September 19 upgrade
 
 - Daymark: `go test ./...` passes, 1,701 tests across 36 packages.

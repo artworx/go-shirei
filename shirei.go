@@ -2230,7 +2230,7 @@ func _cycleFocusOnTab(currentNode *identNode) {
 		return
 	}
 
-	if ui.Host.FrameInput.Key == KeyTab {
+	if ui.Host.FrameInput.Key == KeyTab && ui.Host.Input.Modifiers&^ModShift == ModNone {
 		var dir = 1
 		if ui.Host.Input.Modifiers&ModShift != 0 {
 			dir = -1
