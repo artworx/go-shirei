@@ -70,7 +70,9 @@ func drawTitlebar() {
 		Label(winTitle, FontSize(14), TextColor(0, 0, 25, 1))
 		widgets.Filler(1)
 		if closeButton() {
-			g.ExitWithCleanup(0)
+			if !HandleQuitRequest() {
+				g.ExitWithCleanup(0)
+			}
 		} else if startDrag {
 			startMove()
 		}

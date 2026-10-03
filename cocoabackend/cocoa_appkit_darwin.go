@@ -4,6 +4,7 @@ package cocoabackend
 
 import (
 	"fmt"
+	"go.hasen.dev/shirei"
 	"os"
 	"structs"
 	"sync"
@@ -300,6 +301,7 @@ func registerClasses() error {
 		[]objc.MethodDef{
 			{Cmd: sel("applicationShouldTerminateAfterLastWindowClosed:"), Fn: appShouldTerminateAfterLastWindowClosed},
 			{Cmd: sel("applicationShouldTerminate:"), Fn: appShouldTerminate},
+			{Cmd: sel("windowShouldClose:"), Fn: appWindowShouldClose},
 			{Cmd: sel("applicationDidFinishLaunching:"), Fn: appDidFinishLaunching},
 			{Cmd: sel("windowDidResignKey:"), Fn: appWindowDidResignKey},
 			{Cmd: sel("windowDidBecomeKey:"), Fn: appWindowDidBecomeKey},
@@ -596,7 +598,12 @@ func viewResignFirstResponder(self objc.ID, cmd objc.SEL) bool {
 
 func appShouldTerminateAfterLastWindowClosed(objc.ID, objc.SEL, objc.ID) bool { return true }
 
+func appWindowShouldClose(objc.ID, objc.SEL, objc.ID) bool { return !shirei.HandleQuitRequest() }
+
 func appShouldTerminate(objc.ID, objc.SEL, objc.ID) uint {
+	if shirei.HandleQuitRequest() {
+		return 0
+	}
 	exitWithCleanup()
 	return nsTerminateNow
 }

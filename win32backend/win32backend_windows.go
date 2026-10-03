@@ -367,6 +367,13 @@ func wndProc(hWnd, msg, wparam, lparam uintptr) uintptr {
 		}
 		return 0
 
+	case wmClose:
+		if shirei.HandleQuitRequest() {
+			return 0
+		}
+		r, _, _ := procDefWindowProcW.Call(hWnd, msg, wparam, lparam)
+		return r
+
 	case wmDestroy:
 		closeAccess()
 		releaseGPU()

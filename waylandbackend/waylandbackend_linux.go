@@ -338,7 +338,11 @@ func (*handler) HandleToplevelConfigure(ev zxdg.ToplevelConfigureEvent) {
 	pendingW, pendingH = int(ev.Width), int(ev.Height)
 }
 
-func (*handler) HandleToplevelClose(zxdg.ToplevelCloseEvent) { g.ExitWithCleanup(0) }
+func (*handler) HandleToplevelClose(zxdg.ToplevelCloseEvent) {
+	if !shirei.HandleQuitRequest() {
+		g.ExitWithCleanup(0)
+	}
+}
 
 // HandleCallbackDone: the compositor finished presenting the last frame (this is
 // vsync). Draw the next one if anything still wants to animate.

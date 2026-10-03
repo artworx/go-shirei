@@ -1,9 +1,15 @@
 package app
 
-import g "go.hasen.dev/generic"
+import (
+	g "go.hasen.dev/generic"
+	"go.hasen.dev/shirei"
+)
 
-// Quit ends the process. Safe to call from any goroutine. Run does not return.
+// Quit requests process exit. An installed Shirei quit handler may defer it.
+// Safe to call from any goroutine.
 // AddExitCleanup handlers run first.
 func Quit() {
-	g.ExitWithCleanup(0)
+	if !shirei.HandleQuitRequest() {
+		g.ExitWithCleanup(0)
+	}
 }
