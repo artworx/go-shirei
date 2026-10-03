@@ -164,3 +164,14 @@ window smoke verifies primary click, secondary click, and drag-release. The full
 framework run retains 13 pre-existing snapshot mismatches; its unrelated Metal
 glyph-clip test also reproduces a Go runtime “pointer to free object” failure
 when run alone.
+
+## October 3, 2026: deferred application quit
+
+`SetQuitHandler` lets Daymark retain the window while its shared object store
+flushes memory-only edits. Native Cocoa close/menu termination, X11 close,
+Wayland close and client decoration, Win32 close, and `app.Quit` delegate requests
+without stopping the event loop. Applications without a handler retain upstream
+exit cleanup. The application owns saving, conflict recovery and final exit.
+
+Verification is recorded in [Daymark's shared-object verification report](../daymark-ui/docs/application-state-verification.md). The
+existing rendering/text patch stack and snapshot baselines remain unchanged.

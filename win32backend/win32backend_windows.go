@@ -479,6 +479,7 @@ func wndProc(hWnd, msg, wparam, lparam uintptr) uintptr {
 		return 0
 	case wmClose:
 		if w == mainWindow {
+			if shirei.HandleQuitRequest() { return 0 }
 			if winBackground {
 				procShowWindow.Call(uintptr(w.hwnd), swHide)
 				return 0

@@ -108,6 +108,7 @@ func ClosePopupWindow(id shirei.PopupWindow) {
 
 func requestWindowClose(w *windowState) {
 	if w == mainWindow {
+		if shirei.HandleQuitRequest() { return }
 		if background {
 			mainHideRequested = true
 		} else {

@@ -4,6 +4,7 @@ package cocoabackend
 
 import (
 	"fmt"
+	"go.hasen.dev/shirei"
 	"os"
 	"structs"
 	"sync"
@@ -775,6 +776,9 @@ func viewResignFirstResponder(self objc.ID, cmd objc.SEL) bool {
 func appShouldTerminateAfterLastWindowClosed(objc.ID, objc.SEL, objc.ID) bool { return !winKeepAlive }
 
 func appShouldTerminate(objc.ID, objc.SEL, objc.ID) uint {
+	if shirei.HandleQuitRequest() {
+		return 0
+	}
 	exitWithCleanup()
 	return nsTerminateNow
 }

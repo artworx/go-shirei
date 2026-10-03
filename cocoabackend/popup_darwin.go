@@ -127,6 +127,7 @@ func appWindowShouldClose(_ objc.ID, _ objc.SEL, window objc.ID) bool {
 		return true
 	}
 	if w == mainWindow {
+		if shirei.HandleQuitRequest() { return false }
 		if winKeepAlive {
 			w.gWindow.Send(sel("orderOut:"), objc.ID(0))
 			return false
