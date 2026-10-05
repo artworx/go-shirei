@@ -1148,6 +1148,7 @@ type GlyphsSegment struct {
 	start int
 	length int
 
+	noBreakBefore bool // Unicode glue survives font/style segment boundaries.
 }
 
 type Glyph struct {
@@ -1394,8 +1395,18 @@ func produceShapedSegments(runes []rune, dirs []Direction, base TextStyleAttrs, 
 	// last segment!
 	length := len(runes) - start
 	allSegments = append(allSegments, shapeSegment(segment, runes, start, length))
+	for i := range allSegments {
+		start := allSegments[i].start
+		if start > 0 {
+			allSegments[i].noBreakBefore = unicodeGlue(runes[start-1]) || unicodeGlue(runes[start])
+		}
+	}
 
 	return allSegments
+}
+
+func unicodeGlue(ch rune) bool {
+	return ch == '\u00a0' || ch == '\u202f' || ch == '\u2060' || ch == '\ufeff'
 }
 
 func lineBreakShapedSegments(allSegments []GlyphsSegment, style TextStyleAttrs, maxWidth float32) []ShapedTextLine {
@@ -1417,6 +1428,12 @@ func lineBreakShapedSegments(allSegments []GlyphsSegment, style TextStyleAttrs, 
 		var start int
 		for i := range allSegments {
 			natural := allSegments[i]
+			var gluedWidth float32
+			if !natural.noBreakBefore {
+				for next := i+1; next < len(allSegments) && allSegments[next].noBreakBefore && allSegments[next].lineNo == natural.lineNo; next++ {
+					gluedWidth += allSegments[next].Width
+				}
+			}
 			var segment GlyphsSegment
 			// A candidate is evaluated once here and, if it wraps, once at
 			// the new line start. Committed line prefixes are never revisited.
@@ -1478,7 +1495,7 @@ func lineBreakShapedSegments(allSegments []GlyphsSegment, style TextStyleAttrs, 
 					}
 					segment.Width = natural.Width - (borrowLeft + borrowRight) + extraBefore
 				}
-				widthOverflow := i > start && maxWidth > 0 && segment.Width+widthAcc > maxWidth
+				widthOverflow := i > start && !segment.noBreakBefore && maxWidth > 0 && segment.Width+gluedWidth+widthAcc > maxWidth
 				forceLineBreak := i > start && segment.lineNo > prevLineNo
 				if widthOverflow || forceLineBreak {
 					lines = append(lines, ShapedTextLine{
@@ -1960,6 +1977,7 @@ func tryIncrementalSameWidthShape(runes []rune, style TextStyleAttrs, maxWidth f
 				}
 			}
 			updated := shapeSegment(segment.GlyphSegmentProps, runes, segment.start, segment.length)
+			updated.noBreakBefore = segment.noBreakBefore
 			if updated.Height != segment.Height || updated.EndsWithNewline != segment.EndsWithNewline {
 				return ShapedText{}, false
 			}

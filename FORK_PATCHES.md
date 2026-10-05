@@ -147,6 +147,22 @@ Daymark's release workflow still clones the published fork's `master`. Publishin
 this local update requires coordinating the fork and app changes; the local
 build uses the updated sibling checkout through its existing module replacement.
 
+## October 1, 2026: nonbreaking status references
+
+Nonbreaking spaces, narrow nonbreaking spaces and word joiners preserve their
+no-break boundary across font and style segments. Wrapping fits each glued
+group as a unit, so a Daymark task status icon cannot stay on the previous line
+when its first label word wraps. Hard newlines retain their existing behavior;
+ordinary segment wrapping is unchanged. The scan is linear and adds no paragraph
+buffer. Incremental ASCII edits retain the segment's glue metadata.
+
+Desktop regression coverage checks equal icon slots, shared baselines, wrapping,
+click targets and copying authored text without generated status decorations.
+The framework regression fails with the unchanged source and passes with this
+patch. Desktop package tests, focused race checks and Android bridge race tests
+pass. All 13 framework snapshot mismatches reproduce with byte-identical actual
+PNGs under an unchanged-source overlay; snapshot baselines were left intact.
+
 ## October 2, 2026: Cocoa quick-click edge delivery
 
 The Cocoa backend queues mouse button edges and delivers one edge per frame.
