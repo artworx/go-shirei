@@ -413,3 +413,31 @@ func TestFontEpochInvalidatesForkShapeCaches(t *testing.T) {
 		t.Fatal("font registry change reused incremental or segment cache entries")
 	}
 }
+
+func TestNonbreakingSpaceKeepsStyledWordTogether(t *testing.T) {
+	attrs := requireTextShaping(t)
+	small := attrs
+	small.FontSize *= .6
+	for _, glue := range []string{"\u00a0", "\u202f", "\u2060"} {
+		text := "prefix a" + glue + "label after"
+		spans := []StyleSpan{{From: 7, To: 8, Style: small}}
+		width := ShapeTextResolvedMax("prefix a"+glue, attrs, 0, ResolveStyleSpans(attrs, spans, len([]rune("prefix a"+glue)))...).Lines[0].Width + 1
+		shaped := ShapeTextResolvedMax(text, attrs, width, ResolveStyleSpans(attrs, spans, len([]rune(text)))...)
+		iconLine, labelLine := -1, -1
+		for i, line := range shaped.Lines {
+			for _, seg := range line.Segments {
+				for _, g := range seg.Glyphs {
+					if g.Cluster == 7 {
+						iconLine = i
+					}
+					if g.Cluster == 9 {
+						labelLine = i
+					}
+				}
+			}
+		}
+		if iconLine < 0 || iconLine != labelLine {
+			t.Fatalf("%q icon line=%d label line=%d", glue, iconLine, labelLine)
+		}
+	}
+}
