@@ -1980,17 +1980,6 @@ func emitTextRuns(c *_Container) {
 		return
 	}
 	origin := c.resolvedOrigin
-	for i := range c.paintRects {
-		r := &c.paintRects[i]
-		pushSurface(Surface{
-			Rect:   Rect{Origin: Vec2Add(origin, r.Origin), Size: r.Size},
-			Color1: r.Color,
-			Color2: r.Color,
-		})
-	}
-	if c.glyphData == nil || c.glyphData.Len() == 0 {
-		return
-	}
 	padL := c.Padding[PAD_LEFT]
 	padR := c.Padding[PAD_RIGHT]
 	padT := c.Padding[PAD_TOP]
@@ -1998,7 +1987,7 @@ func emitTextRuns(c *_Container) {
 	x := padL - c.ScrollOffset[0]
 	y := padT - c.ScrollOffset[1]
 	runW := c.textRunWidth
-	if runW <= 0 {
+	if runW <= 0 && c.glyphData != nil {
 		for i := range c.glyphData.glyphs {
 			runW += c.glyphData.glyphs[i].Rect.Size[0]
 		}
@@ -2006,6 +1995,19 @@ func emitTextRuns(c *_Container) {
 	x += (avail - runW) * alignF(c.MainAlign)
 	ox := origin[0] + x
 	oy := origin[1] + y
+	for i := range c.paintRects {
+		r := &c.paintRects[i]
+		// Bands already include their vertical leading. Share the glyphs'
+		// horizontal offset so selection and decorations follow line alignment.
+		pushSurface(Surface{
+			Rect:   Rect{Origin: Vec2{ox + r.Origin[0], origin[1] + r.Origin[1]}, Size: r.Size},
+			Color1: r.Color,
+			Color2: r.Color,
+		})
+	}
+	if c.glyphData == nil || c.glyphData.Len() == 0 {
+		return
+	}
 	pushSurface(Surface{
 		Rect: Rect{
 			Origin: Vec2{ox, oy},
