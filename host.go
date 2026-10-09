@@ -98,6 +98,10 @@ type Host struct {
 	// alpha. Renderers clear unpainted pixels to transparent black instead of
 	// opaque white. Configure it before the first frame.
 	TransparentBackground bool
+	// ViewZoom is app-owned whole-view magnification. Zero means 1.
+	// Layout and hit testing use zoomed logical coordinates; backend geometry
+	// and published paint/accessibility/IME coordinates remain window points.
+	ViewZoom float32
 
 	// HardwareKeyboard is backend → app: true when a physical keyboard is
 	// available (built-in laptop keys, USB/Bluetooth keyboard, etc.). False

@@ -136,7 +136,7 @@ func updateGlyphCache(surfaces []Surface, runs []GlyphRun) (added, evicted []Gly
 		if s.GlyphRunCount > 0 {
 			if s.GlyphData != nil {
 				for _, dep := range s.GlyphData.dependencies {
-					if key, ok := glyphKeyAt(dep.font, dep.glyph, dep.em); ok {
+					if key, ok := glyphKeyAt(dep.font, dep.glyph, dep.em*surfaceGlyphScale(s)); ok {
 						touch(key)
 					}
 				}

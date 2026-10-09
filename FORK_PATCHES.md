@@ -3,6 +3,24 @@
 Status: Dated verification record. Decisions refer to the source revisions below;
 inspect Git for current publication and branch state.
 
+## October 9, 2026: whole-view zoom
+
+`Host.ViewZoom` adds application-owned magnification without requiring native
+backends to change their window coordinates. Frame entry converts viewport and
+pointer/touch input to layout units; publication converts surfaces, shared glyph
+placement, accessibility bounds and IME anchors back to window points. Glyph
+bitmap dependencies use the magnified em size. Zero/invalid zoom means 1.
+Applications request a next frame when changing zoom during a build; the new
+scale takes effect on that next frame. Daymark binds the platform primary
+modifier with plus/equal, minus and zero to bounded session-only zoom steps.
+
+Verification: zoom, glyph-run and software-renderer focused tests pass; the
+Daymark full Go suite and documentation checks pass. Light/dark desktop
+previews at 125% were rendered and inspected. The framework full suite
+passes its core package but retains controls/widget snapshot mismatches,
+reproduced with the unchanged HEAD sources using a Go overlay. The software
+renderer benchmark completes (`-benchtime=1x`, a smoke check only).
+
 ## October 9, 2026: v0.8.0 rebase
 
 Upstream: `58b0835` (`upstream/master`, containing release tag `v0.8.0` at

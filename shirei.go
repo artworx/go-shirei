@@ -222,6 +222,9 @@ func RunFrameFn(frameFn FrameFn) FrameOutputData {
 // RunFrameFnLocked produces a frame for the active UI. The backend must hold
 // the frame lock (for example through EnterUI). It must not nest frame builds.
 func RunFrameFnLocked(frameFn FrameFn) FrameOutputData {
+	restoreZoom := beginViewZoom()
+	defer restoreZoom()
+
 	ui.FrameTimings = FrameTimings{ProduceStart: time.Now()}
 	ui.frameInProgress = true
 	ui.runFirstFrame = ui.FrameNumber + 1
@@ -457,6 +460,8 @@ func RunFrameFnLocked(frameFn FrameFn) FrameOutputData {
 	maybeSweepImages()
 	maybeSweepContentCaches()
 
+	restoreZoom()
+
 	var output FrameOutputData
 
 	output.Access = ui.access
@@ -618,6 +623,9 @@ type Surface struct {
 	// ContentScale float32
 
 	// TODO: image, glyph, shape (vector)
+
+	// GlyphDataScale scales shared line-relative geometry; zero means 1.
+	GlyphDataScale float32
 
 	// GlyphData owns immutable line-relative geometry. Keep this pointer last:
 	// surface hashing reads the pointer-free prefix and its cached content hash.

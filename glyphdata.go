@@ -55,6 +55,10 @@ func (s *Surface) GlyphRunAt(i int, runs []GlyphRun) GlyphRun {
 		return runs[int(s.GlyphRunFirst)+i]
 	}
 	glyph := s.GlyphData.glyphs[i]
+	if s.GlyphDataScale != 0 {
+		glyph.Rect = scaleZoomRect(glyph.Rect, s.GlyphDataScale)
+		glyph.GlyphOffset = Vec2Mul(glyph.GlyphOffset, s.GlyphDataScale)
+	}
 	glyph.Rect.Origin[0] += s.Rect.Origin[0]
 	glyph.Rect.Origin[1] += s.Rect.Origin[1]
 	if s.Color1 != (Vec4{}) {
