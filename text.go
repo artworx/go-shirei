@@ -939,7 +939,7 @@ func shapedTextLineEm(line *ShapedTextLine, fallback float32) float32 {
 	for i := range line.Segments {
 		lineEm = max(lineEm, line.Segments[i].size)
 	}
-	return lineEm
+	return lineEm + line.rubyTop
 }
 
 // ShapedTextLayoutPadding is the symmetric vertical ink padding added by
@@ -1129,37 +1129,24 @@ type TextLayout struct {
 
 type GlyphsSegment struct {
 	GlyphSegmentProps
-	Width           float32
-	Height          float32
+	Width, Height float32
+	tabWidth      float32 // four space advances; placement resolves the next stop
+	// Ink below the primary face baseline, independent of fallback glyphs.
+	descenderDepth  float32
 	EndsWithNewline bool
+	noBreakBefore   bool // Unicode glue survives font/style segment boundaries.
 	Glyphs          []Glyph
-	tabWidth        float32 // four space advances; placement resolves the next stop
-	// descenderDepth is ink below the baseline at this segment's em, from
-	// the style's primary face (not the coverage/fallback face). Line pad
-	// uses the max over the last line instead of GetFace per glyph.
-	descenderDepth           float32
-	ruby                     []GlyphsSegment
-	rubyTop, rubyX           float32
-	rubyBaseWidth, rubyWidth float32
-	// Natural shape data stays immutable; wrap copies carry final placement.
-	rubyEm                     float32
-	rubyOverhang               bool
-	rubyHeadRoom, rubyTailRoom float32
-	start int
-	length int
-
-	noBreakBefore bool // Unicode glue survives font/style segment boundaries.
+	rubyData        *rubySegmentData
+	start, length   int
 }
 
 type Glyph struct {
-	FontId       FontId
-	GlyphId      GlyphId
-	Cluster      int32
-	Offset       Vec2
-	XAdvance     float32
-	Width        float32
-	em           float32
-	styleCluster int32
+	FontId   FontId
+	GlyphId  GlyphId
+	Cluster  int32
+	Offset   Vec2
+	XAdvance float32
+	Width    float32
 }
 
 // sharedShapeBuffer is the one HarfBuzz buffer all shaping goes through.
@@ -1278,13 +1265,12 @@ func shapeSegmentUncached(props GlyphSegmentProps, text []rune, start, length in
 		}
 
 		g.Append(&s.Glyphs, Glyph{
-			FontId:       fontId,
-			GlyphId:      inf.Glyph,
-			Cluster:      int32(inf.Cluster),
-			styleCluster: int32(inf.Cluster),
-			Offset:       Vec2{float32(pos.XOffset) * scaleFactor, float32(pos.YOffset) * scaleFactor},
-			XAdvance:     xAdvance,
-			Width:        width,
+			FontId:   fontId,
+			GlyphId:  inf.Glyph,
+			Cluster:  int32(inf.Cluster),
+			Offset:   Vec2{float32(pos.XOffset) * scaleFactor, float32(pos.YOffset) * scaleFactor},
+			XAdvance: xAdvance,
+			Width:    width,
 		})
 		// width is accumulated xadvances
 		// only the last item we should take the max of width and xadvance but
@@ -1430,9 +1416,23 @@ func lineBreakShapedSegments(allSegments []GlyphsSegment, style TextStyleAttrs, 
 			natural := allSegments[i]
 			var gluedWidth float32
 			if !natural.noBreakBefore {
-				for next := i+1; next < len(allSegments) && allSegments[next].noBreakBefore && allSegments[next].lineNo == natural.lineNo; next++ {
+				for next := i + 1; next < len(allSegments) && allSegments[next].noBreakBefore && allSegments[next].lineNo == natural.lineNo; next++ {
 					gluedWidth += allSegments[next].Width
 				}
+			}
+			// Ordinary text needs neither tab-stop nor annotation placement.
+			// Keep this common path as small as the pre-ruby line breaker.
+			if natural.rubyData == nil && natural.tabWidth == 0 {
+				widthOverflow := i > start && !natural.noBreakBefore && maxWidth > 0 && natural.Width+gluedWidth+widthAcc > maxWidth
+				if widthOverflow || i > start && natural.lineNo > prevLineNo {
+					lines = append(lines, ShapedTextLine{Segments: allSegments[start:i], Width: widthAcc, Height: lineHeight(height)})
+					start = i
+					widthAcc, height, readingEnd, previousRubyEm = 0, 0, 0, 0
+				}
+				widthAcc += natural.Width
+				height = max(height, natural.Height)
+				prevLineNo = natural.lineNo
+				continue
 			}
 			var segment GlyphsSegment
 			// A candidate is evaluated once here and, if it wraps, once at
@@ -1454,10 +1454,10 @@ func lineBreakShapedSegments(allSegments []GlyphsSegment, style TextStyleAttrs, 
 					}
 				}
 				var borrowLeft, borrowRight, extraBefore float32
-				excess := natural.Width - natural.rubyBaseWidth
+				excess := natural.Width - natural.rubyState().rubyBaseWidth
 				baseX := excess * .5
-				readingX := (natural.Width - natural.rubyWidth) * .5
-				if len(natural.ruby) > 0 && natural.rubyOverhang {
+				readingX := (natural.Width - natural.rubyState().rubyWidth) * .5
+				if len(natural.rubyState().ruby) > 0 && natural.rubyState().rubyOverhang {
 					// At the line start the base stays flush with the margin;
 					// a longer reading extends toward the following text.
 					if i == start {
@@ -1468,15 +1468,15 @@ func lineBreakShapedSegments(allSegments []GlyphsSegment, style TextStyleAttrs, 
 						readingLimit = readingEnd
 						// Directly adjacent annotations can touch. Intervening
 						// plain text reserves clearance even when it has no width.
-						if i > start && len(allSegments[i-1].ruby) == 0 {
-							readingLimit += .5 * max(previousRubyEm, natural.rubyEm)
+						if i > start && len(allSegments[i-1].rubyState().ruby) == 0 {
+							readingLimit += .5 * max(previousRubyEm, natural.rubyState().rubyEm)
 						}
 					}
 					if i > start {
 						prev := &allSegments[i-1]
 						if prev.Dir == LTR && prev.lineNo == natural.lineNo && prev.size <= natural.size {
 							room := max(float32(0), widthAcc+readingX-readingLimit)
-							borrowLeft = min(baseX, natural.rubyEm, prev.rubyTailRoom, room)
+							borrowLeft = min(baseX, natural.rubyState().rubyEm, prev.rubyState().rubyTailRoom, room)
 						}
 					}
 					// Keep the minimum reading gap even when no neighboring
@@ -1485,7 +1485,7 @@ func lineBreakShapedSegments(allSegments []GlyphsSegment, style TextStyleAttrs, 
 					if i+1 < len(allSegments) {
 						next := &allSegments[i+1]
 						if next.Dir == LTR && next.lineNo == natural.lineNo && next.size <= natural.size {
-							borrowRight = min(excess-baseX, natural.rubyEm, next.rubyHeadRoom)
+							borrowRight = min(excess-baseX, natural.rubyState().rubyEm, next.rubyState().rubyHeadRoom)
 							// Reserve the following kana only if its whole shaped
 							// segment fits. Its width cannot change during placement.
 							if maxWidth > 0 && widthAcc+(natural.Width-(borrowLeft+borrowRight)+extraBefore)+next.Width > maxWidth {
@@ -1505,17 +1505,19 @@ func lineBreakShapedSegments(allSegments []GlyphsSegment, style TextStyleAttrs, 
 					widthAcc, height, readingEnd, previousRubyEm = 0, 0, 0, 0
 					continue
 				}
-				if len(segment.ruby) > 0 {
-					segment.rubyX = readingX - borrowLeft + extraBefore
+				if len(segment.rubyState().ruby) > 0 {
+					metadata := *natural.rubyState()
+					segment.rubyData = &metadata
+					segment.rubyData.rubyX = readingX - borrowLeft + extraBefore
 					segment.Glyphs = slices.Clone(natural.Glyphs)
 					for j := range segment.Glyphs {
 						segment.Glyphs[j].Offset[0] += baseX - borrowLeft + extraBefore
 					}
 					if n := len(segment.Glyphs); n > 0 {
-						segment.Glyphs[n-1].XAdvance += segment.Width - natural.rubyBaseWidth
+						segment.Glyphs[n-1].XAdvance += segment.Width - natural.rubyState().rubyBaseWidth
 					}
-					readingEnd = widthAcc + segment.rubyX + segment.rubyWidth
-					previousRubyEm = natural.rubyEm
+					readingEnd = widthAcc + segment.rubyState().rubyX + segment.rubyState().rubyWidth
+					previousRubyEm = natural.rubyState().rubyEm
 				}
 				break
 			}
@@ -1589,9 +1591,9 @@ func prepareShapedLinePaint(line *ShapedTextLine, style TextStyleAttrs) {
 			lineEm = s.size
 		}
 		n += len(s.Glyphs)
-		line.rubyTop = max(line.rubyTop, s.rubyTop)
-		baseHeight = max(baseHeight, s.Height-s.rubyTop)
-		for _, reading := range s.ruby {
+		line.rubyTop = max(line.rubyTop, s.rubyState().rubyTop)
+		baseHeight = max(baseHeight, s.Height-s.rubyState().rubyTop)
+		for _, reading := range s.rubyState().ruby {
 			n += len(reading.Glyphs)
 		}
 	}
@@ -1618,13 +1620,13 @@ func prepareShapedLinePaint(line *ShapedTextLine, style TextStyleAttrs) {
 			g := &s.Glyphs[j]
 			glyphEm := em
 			glyphShift := shift
-			if g.em > 0 {
-				glyphEm = g.em
+			if len(s.rubyState().glyphs) > 0 {
+				glyphEm = s.rubyState().glyphs[j].em
 				glyphShift = baselineShiftY(lineEm, glyphEm)
 			}
 			paintCluster := g.Cluster
-			if g.em > 0 {
-				paintCluster = g.styleCluster
+			if len(s.rubyState().glyphs) > 0 {
+				paintCluster = s.rubyState().glyphs[j].cluster
 			}
 			stamps = append(stamps, glyphStamp{Advance: g.XAdvance, Cluster: paintCluster})
 			runs = append(runs, GlyphRun{
@@ -1638,16 +1640,16 @@ func prepareShapedLinePaint(line *ShapedTextLine, style TextStyleAttrs) {
 				maxEm = em
 			}
 		}
-		readingX := groupX + s.rubyX
+		readingX := groupX + s.rubyState().rubyX
 		var readingEm float32
-		for _, reading := range s.ruby {
+		for _, reading := range s.rubyState().ruby {
 			readingEm = max(readingEm, reading.size)
 		}
-		for _, reading := range s.ruby {
+		for _, reading := range s.rubyState().ruby {
 			for _, g := range reading.Glyphs {
-				stamps = append(stamps, glyphStamp{Cluster: g.styleCluster})
+				stamps = append(stamps, glyphStamp{Cluster: g.Cluster})
 				runs = append(runs, GlyphRun{
-					Rect:   Rect{Origin: Vec2{readingX, line.rubyTop - s.rubyTop}, Size: Vec2{g.XAdvance, reading.size}},
+					Rect:   Rect{Origin: Vec2{readingX, line.rubyTop - s.rubyState().rubyTop}, Size: Vec2{g.XAdvance, reading.size}},
 					FontId: g.FontId, GlyphId: g.GlyphId, GlyphOffset: Vec2{g.Offset[0], g.Offset[1] + baselineShiftY(readingEm, reading.size)},
 				})
 				readingX += g.XAdvance
@@ -1967,6 +1969,14 @@ func tryIncrementalSameWidthShape(runes []rune, style TextStyleAttrs, maxWidth f
 			segmentEnd := segment.start + segment.length
 			if segmentEnd <= from || segment.start >= to {
 				continue
+			}
+			// Tabs depend on preceding advances; ruby groups remap document
+			// clusters and reserve reading geometry. Rebuild these lines through
+			// full placement rather than reusing their position-dependent shape.
+			for _, placed := range line.Segments {
+				if placed.tabWidth > 0 || len(placed.rubyState().ruby) > 0 {
+					return ShapedText{}, false
+				}
 			}
 			if segment.Dir != LTR {
 				return ShapedText{}, false

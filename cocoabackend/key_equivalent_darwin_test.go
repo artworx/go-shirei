@@ -29,6 +29,8 @@ func TestControlTabKeyEquivalentReachesFrame(t *testing.T) {
 	defer pool.Send(sel("drain"))
 	view := objc.ID(viewClass).Send(sel("alloc")).Send(sel("initWithFrame:"), nsMakeRect(0, 0, 100, 100))
 	defer view.Send(sel("release"))
+	windowsByObject[view] = mainWindow
+	defer delete(windowsByObject, view)
 	for _, test := range []struct {
 		name  string
 		flags uint
@@ -46,7 +48,7 @@ func TestControlTabKeyEquivalentReachesFrame(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			shirei.ResetInputSession()
 			t.Cleanup(shirei.ResetInputSession)
-			gWantsFrame = false
+			currentWindow.gWantsFrame = false
 			event := keyEvent(objc.ID(objc.GetClass("NSEvent")),
 				sel("keyEventWithType:location:modifierFlags:timestamp:windowNumber:context:characters:charactersIgnoringModifiers:isARepeat:keyCode:"),
 				uint(10), nsPoint{}, test.flags, float64(0), int64(0), objc.ID(0), nsString("\t"), nsString("\t"), false, test.key,
@@ -62,8 +64,8 @@ func TestControlTabKeyEquivalentReachesFrame(t *testing.T) {
 			if handled != wantHandled {
 				t.Fatalf("native key equivalent handled = %v, want %v", handled, wantHandled)
 			}
-			if gWantsFrame != wantHandled {
-				t.Fatalf("frame requested = %v, want %v", gWantsFrame, wantHandled)
+			if currentWindow.gWantsFrame != wantHandled {
+				t.Fatalf("frame requested = %v, want %v", currentWindow.gWantsFrame, wantHandled)
 			}
 			onModifiers(0)
 			var got shirei.KeyCombo

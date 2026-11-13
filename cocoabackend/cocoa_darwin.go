@@ -312,9 +312,10 @@ func pickFreeSurface() *ioSurface {
 }
 
 type mouseEdge struct {
- action shirei.MouseAction
- button shirei.MouseButton
+	action shirei.MouseAction
+	button shirei.MouseButton
 }
+
 func produceFrame(w, h float64) {
 	if framesInProgress > 0 || currentWindow.closing || currentWindow.closed {
 		currentWindow.gWantsFrame = true

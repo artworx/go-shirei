@@ -78,7 +78,9 @@ func handleEvent(ev xgb.Event) bool {
 		// WM_DELETE_WINDOW: the close button.
 		if e.Type == wmProtocols && e.Format == 32 && xproto.Atom(e.Data.Data32[0]) == wmDelete {
 			if currentWindow == mainWindow {
-				if shirei.HandleQuitRequest() { return false }
+				if shirei.HandleQuitRequest() {
+					return false
+				}
 				mainCloseRequested = true
 			} else {
 				ClosePopupWindow(currentWindow.popupID)

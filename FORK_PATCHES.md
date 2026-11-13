@@ -1,3 +1,171 @@
+# Daymark fork: v0.9.0 patch audit
+
+Status: Verification record for the November 13, 2026 upgrade. Inspect Git for
+current branch and publication state. Earlier audits below are historical.
+
+Upstream base: `4fa3f37` (`v0.9.0`, released November 12). Previous local fork:
+`c1321ff`, based on upstream `58b0835` (v0.8.0). The original fork is preserved on
+`backup/pre-v0.9.0-2026-11-13`; the replay is on `upgrade/shirei-v0.9.0`.
+No remote branch was rewritten or pushed by this upgrade.
+
+All 26 fork commits were compared with upstream source, their regression tests,
+and Daymark consumers. No functional patch is completely superseded. The old
+integration commits retain only their surviving implementation; historical audit
+claims are not new verification claims. Diagnostics work was explicitly discarded
+by the user and is excluded from this upgrade.
+
+## Patch decisions
+
+| Previous commit | Contribution | Decision | Evidence / adaptation |
+| --- | --- | --- | --- |
+| `48e286d` | Resolved-style lookup | Keep | Upstream still scans flattened spans; retain binary paint lookup and run coalescing. |
+| `de2c318` | Boundary-event flattening | Keep | Upstream flattening still visits spans at each boundary; keep the ordered event sweep. |
+| `ab5fa32` | Per-pass shaping lookup | Adapt | Retain glyph/face memoization and forward style traversal; map both tabs and newlines to the space face. |
+| `86368aa` | Reusable shaped segments | Adapt | Upstream has paragraph caches, not edit-reusable segments. Ruby remapping must clone cached glyphs before changing clusters. |
+| `840717c` | Bounded large-document caches | Keep | Both large wrapped/unwrapped caches remain limited to two documents. |
+| `d5b6768` | Incremental equal-length edits | Adapt | Retain ASCII overwrite reuse and immutable unchanged lines. Edits on lines containing tabs or ruby use full placement. |
+| `4dc62e0` | Per-line bidi cache | Keep | Upstream still recomputes bidi after paragraph changes; unchanged-line reuse remains useful. |
+| `587360d` | Resolved-span shaping API | Keep | Daymark still passes already resolved spans through the fork API. |
+| `359e710` | Viewport text layout | Keep | The new stock text editor does not replace Daymark’s editor or its viewport/full-height API. |
+| `88787b5` | Background image reads | Keep | Upstream multi-window image retention does not move file reads out of frame production. |
+| `ec4b2e7` | Skip unused decorations | Keep | Retain decoration checks and line-local span handling in the shared row-height/alignment implementation. |
+| `1a67b48` | Nearest font face | Keep | Upstream still requests exact aspects. The controlled snapshot comparison isolates this intentional font difference. |
+| `b23401d` | Opaque image blits | Keep | Retain caller opacity hints and rounded-clip interior copies alongside upstream transparent canvases. |
+| `af5d3b6` | Background small-image decode | Keep | Compressed byte size still does not bound decode cost; headless output remains synchronous. |
+| `2d6bd4b` | v0.7 rendering integration | Adapt | Retain line-local paint hashing, epoch invalidation, incremental paint refresh and ordered-pixel adaptation. The reusable paint helper now includes ruby geometry. |
+| `ec12db5` | Aligned shaped text | Adapt | Upstream RowHeight is different from horizontal alignment. Preserve both APIs and explicit selection colors. |
+| `ac289d1` | Leading and Unicode wrapping | Keep | RowHeight does not replace baseline LineHeight or CJK break opportunities. |
+| `536ffef` | Fork agent guidance | Keep | Portable ownership and verification instructions still apply. |
+| `53b8a21` | Oversized focus reveal | Keep | Upstream focus reveal still lacks the visible-oversized-target guard. |
+| `9405494` | Control-Tab delivery | Adapt | Retain native key-equivalent delivery and pending modifiers; move pending state into each window and preserve AcceptTab behavior. Use the already-locked frame entry in native callbacks. |
+| `c82143f` | Quick mouse edges | Adapt | Upstream bit flags preserve one sampled press/release pair but collapse bursts and share one button value. Keep the ordered Cocoa queue, now per window, for distinct primary/secondary edges. |
+| `e31cf4a` | Deferred quit | Adapt | The new popup lifecycle does not defer application quit for saving. Intercept main-window close only; auxiliary windows retain upstream close behavior. |
+| `873935a` | Nonbreaking references | Adapt | Retain glue across style/font boundaries while incorporating tab-stop and ruby placement. |
+| `9a703cf` | Selection alignment | Keep | Selection/decorations must share the aligned glyph origin; row geometry does not supply that offset. |
+| `ab5f83d` | v0.8 audit | Historical | Retain as dated evidence below; this section supplies the v0.9 decision and current verification record. |
+| `c1321ff` | Whole-view zoom | Adapt | Upstream still has no whole-view magnification. Begin/end zoom at RunFrameFnLocked so both public and native frame entry paths apply it. |
+
+## Integration regressions found and fixed
+
+- Viewport line-box height omitted ruby readings; include the annotation height
+  while preserving the caller’s fallback font size. A height regression covers it.
+- Ruby source remapping mutated shared segment-cache glyph arrays. Clone the
+  glyphs before remapping; preserve document-coordinate segment bounds.
+- Incremental ASCII changes before a tab retained obsolete position-dependent
+  tab advances. Fall back on affected tab/ruby lines; ordinary safe overwrites
+  still reshape one segment and share every unchanged line.
+- Native callbacks already hold the new per-window frame lock. Input delivery
+  uses `RunFrameFnLocked` there, avoiding recursive locking. Pending keys and
+  ordered mouse edges belong to their native window. Tests exercise the locked
+  path and delivery isolation between two windows.
+- Main-window close delegates to application saving; popup close does not.
+  Native selector tests cover deferred termination and an independent popup.
+- Daymark exact mouse-action comparisons ignored upstream’s combined press/release
+  flags. Consumers now use `MouseAction.Has`; a context-menu regression reproduces
+  the missing secondary-click behavior before the change.
+
+## Plain-text performance adaptation
+
+Upstream stores ruby metrics in every segment and additional annotation values
+in every glyph. The initial replay materially slowed the large-document editor.
+CPU profiles and alternating old/new runs reproduced this. The fork now stores
+annotation-only metrics in optional segment metadata, including per-base-glyph
+style/size data. Ordinary glyphs retain compact storage; ordinary wrapping skips
+annotation placement. Cached annotation metadata is copied before wrap placement.
+The complete upstream ruby suite and snapshot attribution verify preserved behavior.
+
+## Verification
+
+Host: Apple M4 Pro, macOS/arm64, Go 1.27.3. Checks run from the relevant
+repository; nested modules used a temporary workspace binding every module to
+the local framework. No snapshot goldens were updated.
+
+- Framework `go test ./...`: only 15 snapshot image differences (eight controls,
+  seven widget images). Every widget actual matches pristine v0.9.0 byte-for-byte.
+  Every controls actual matches when only nearest-face resolution is disabled.
+  Light/dark controls were inspected; the normal fork retains requested bold faces.
+- Framework `go test ./... -skip '^TestSnapshot'`: passes. Focused race checks
+  cover shaping/cache/epoch/glue/viewport, images/blits, zoom, native shortcuts,
+  pending input in two windows, mouse edge ordering, and main/popup quit.
+- All 22 nested modules were tested with the local framework and pristine
+  upstream; the same 11 example modules have snapshot failures. Haystack also
+  fails `TestDriveGroupedSearch` on both revisions. Other nested modules pass.
+  Of 131 comparable root/nested actual PNGs, all 131 match pristine upstream
+  when only the fork’s nearest-face selection is disabled. All 131 normal-fork
+  images remain byte-identical after the compact ruby metadata adaptation.
+- One intermediate full Daymark run reported an empty middle-document drag
+  selection. It did not reproduce in ten focused repetitions or three fresh full
+  viewer runs on either revision; subsequent full Daymark runs pass. This isolated
+  observation is retained here rather than claimed fixed or silently omitted.
+- Daymark `go test ./...`: passes. Editor race tests and focused theme,
+  typography, tab shortcut, quit and Ask selection/scroll/copy race tests pass.
+  Android bridge `go test -race ./...` passes.
+- Daymark `make build build-darwin build-windows`: passes for Linux/amd64,
+  macOS/arm64 and Windows/amd64. Native Linux/Windows interaction and device UI
+  were not run; cross-builds are not interaction coverage.
+- Workspace, task editor, split Markdown and Ask previews were rendered and
+  inspected in both appearances. Native Cocoa selector/input tests are headless;
+  manual live-window gesture/IME smoke remains unverified.
+- Changed Go files are formatted; Git whitespace checks pass. Workspace
+  documentation validation reports zero errors.
+
+The full framework suite is not green because of the reproduced snapshot
+baselines. The full framework race suite is not claimed clean: affected race
+checks were run rather than treating the prior audit’s race failures as exemptions.
+
+### Performance
+
+Preserved v0.8 fork and final fork benchmark binaries use the same Daymark
+sources, fixture, compiler and font-scan wait. The old viewer sources are supplied
+through an overlay because v0.8 has no MouseAction.Has. Editor runs alternate
+old/final twice (`-benchtime=20x`); viewer cases use three 20-iteration samples.
+These are headless frame-production measurements, not native presentation FPS.
+Small timing differences should not be interpreted as significant improvements.
+
+| Editor scenario | Previous fork median | v0.9 fork median |
+| --- | ---: | ---: |
+| Steady | 6.86 ms | 6.87 ms |
+| Scroll | 6.26 ms | 6.23 ms |
+| Equal-length edit | 19.54 ms | 17.46 ms |
+| Insertion | 181.83 ms | 182.94 ms |
+
+Safe overwrites still reshape one segment. Insertion allocation is approximately
+305 MB on both revisions after packing optional metadata (initial replay: 339 MB).
+Arbitrary insertions still exceed an interactive 16.7 ms budget, as before.
+
+Viewer medians (previous → final): ordinary steady 0.355 → 0.207 ms, scroll
+1.228 → 1.292 ms; large fence steady 1.453 → 1.359 ms, scroll 1.439 → 1.453 ms;
+architecture modal general paint 4.284 → 4.462 ms, opaque-copy paint
+4.008 → 3.903 ms. No material slowdown is established by these samples.
+
+Reproduce framework and consumer checks:
+
+```sh
+# go-shirei/
+go test ./...
+go test ./... -skip '^TestSnapshot'
+go test -race . ./cocoabackend -run 'Test(Resolved|Flatten|Shape|Large|Bidi|Calculate|FontEpoch|Nonbreaking|UseOpaque|Blit|LoadImageDoesNot|LookupClosest|SystemFontParser|Quit|FocusReveal|RevealDelta|ControlFocus|ControlTab|NativeQuit|Pending|PopupClose|Shortcut|Mouse|QuickMouse|SingleMouse|TabStops|Ruby|ViewZoom)'
+# daymark-ui/
+go test ./...
+go test -race ./internal/markdowneditor
+go test -race . -run '^Test(SyncTheme|Theme|Typography|WorkspaceTabShortcut|Quit|CmdQ|Hindsight.*(Scroll|Selection|Copy)|WorkspaceTabSecondaryClick)'
+go test ./internal/markdowneditor -run '^$' -bench '^BenchmarkMarkdownLargeFileFrame$' -benchmem -benchtime=20x
+go test ./internal/markdownviewer -run '^$' -bench '^Benchmark(ViewerLargeDocumentFrame|ViewerLargeSingleFenceFrame|ArchitectureExpandedModalScrollPaint)$' -benchmem -benchtime=20x
+make build build-darwin build-windows
+python3 scripts/check-docs.py --workspace
+```
+
+To reproduce snapshot attribution, replace only the family resolver’s
+`LookupClosestFace` call with `LookupFace` through a temporary Go overlay, then
+run the same snapshots against this fork and pristine `4fa3f37`. Bind nested
+modules through a temporary `go.work`; root `go test ./...` excludes them.
+
+Daymark’s module requirement is v0.9.0 and its sibling replacement remains in
+place. CI releases clone published `artworx/go-shirei` master; the local upgrade
+branch must be published/coordinated before those releases use these changes.
+
+---
+
 # Daymark fork: v0.8.0 patch audit
 
 Status: Dated verification record. Decisions refer to the source revisions below;

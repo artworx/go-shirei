@@ -15,9 +15,12 @@ func TestNativeQuitSelectorsKeepWindowOpenWhenHandled(t *testing.T) {
 	if err := registerClasses(); err != nil {
 		t.Fatal(err)
 	}
+	const window objc.ID = 0x1234
+	windowsByObject[window] = mainWindow
+	t.Cleanup(func() { delete(windowsByObject, window) })
 	delegate := objc.ID(appDelegateClass).Send(sel("alloc")).Send(sel("init"))
 	defer delegate.Send(sel("release"))
-	if objc.Send[bool](delegate, sel("windowShouldClose:"), objc.ID(0)) {
+	if objc.Send[bool](delegate, sel("windowShouldClose:"), window) {
 		t.Fatal("window closed before save")
 	}
 	if objc.Send[uint](delegate, sel("applicationShouldTerminate:"), objc.ID(0)) != 0 {
@@ -28,6 +31,6 @@ func TestNativeQuitSelectorsKeepWindowOpenWhenHandled(t *testing.T) {
 	}
 	shirei.SetQuitHandler(nil)
 	if !objc.Send[bool](delegate, sel("windowShouldClose:"), objc.ID(0)) {
-		t.Fatal("default close behavior changed")
+		t.Fatal("unknown window close behavior changed")
 	}
 }

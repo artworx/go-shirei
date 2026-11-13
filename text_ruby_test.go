@@ -20,14 +20,14 @@ func TestRubyShapingAndWrapping(t *testing.T) {
 	var group *GlyphsSegment
 	for i := range shaped.Lines[0].Segments {
 		s := &shaped.Lines[0].Segments[i]
-		if len(s.ruby) > 0 {
+		if len(s.rubyState().ruby) > 0 {
 			group = s
 		}
 	}
-	if group == nil || len(group.Glyphs) == 0 || len(group.ruby[0].Glyphs) == 0 {
+	if group == nil || len(group.Glyphs) == 0 || len(group.rubyState().ruby[0].Glyphs) == 0 {
 		t.Fatal("missing base or reading")
 	}
-	if group.rubyTop <= 0 || group.Width <= 0 {
+	if group.rubyState().rubyTop <= 0 || group.Width <= 0 {
 		t.Fatal("missing annotation geometry")
 	}
 	for _, g := range group.Glyphs {
@@ -42,7 +42,7 @@ func TestRubyShapingAndWrapping(t *testing.T) {
 	count := 0
 	for _, l := range wrapped.Lines {
 		for _, s := range l.Segments {
-			if len(s.ruby) > 0 {
+			if len(s.rubyState().ruby) > 0 {
 				count++
 				if len(s.Glyphs) != len(group.Glyphs) {
 					t.Fatal("ruby group splits at wrap")
@@ -61,7 +61,7 @@ func TestRubyShapingAndWrapping(t *testing.T) {
 		sh := ShapeText(bad, st)
 		for _, l := range sh.Lines {
 			for _, s := range l.Segments {
-				if len(s.ruby) > 0 {
+				if len(s.rubyState().ruby) > 0 {
 					t.Fatalf("unsupported block is interpreted: %q", bad)
 				}
 			}
@@ -163,19 +163,19 @@ func TestRubyOverhangLayout(t *testing.T) {
 			for _, line := range sh.Lines {
 				var x, end, previousEm float32
 				for i, seg := range line.Segments {
-					if len(seg.ruby) > 0 {
-						left, right := x+seg.rubyX, x+seg.rubyX+seg.rubyWidth
+					if len(seg.rubyState().ruby) > 0 {
+						left, right := x+seg.rubyState().rubyX, x+seg.rubyState().rubyX+seg.rubyState().rubyWidth
 						if left < -0.001 || right > line.Width+.001 {
 							t.Fatalf("reading escapes line at width %.2f: [%.2f,%.2f] in %.2f for %q", width, left, right, line.Width, sample.text)
 						}
 						var gap float32
-						if i > 0 && len(line.Segments[i-1].ruby) == 0 {
-							gap = .5 * max(previousEm, seg.rubyEm)
+						if i > 0 && len(line.Segments[i-1].rubyState().ruby) == 0 {
+							gap = .5 * max(previousEm, seg.rubyState().rubyEm)
 						}
 						if previousEm > 0 && left < end+gap-.001 {
 							t.Fatalf("reading gap is too small at width %.2f: %.2f for %q", width, left-end, sample.text)
 						}
-						end, previousEm = right, seg.rubyEm
+						end, previousEm = right, seg.rubyState().rubyEm
 					}
 					var advance float32
 					for _, glyph := range seg.Glyphs {
@@ -237,7 +237,7 @@ func TestRubyAnnotationBoundaries(t *testing.T) {
 				}
 				if separator != "" {
 					left, right := line.Segments[0], line.Segments[len(line.Segments)-1]
-					gap := line.Width - right.Width + right.rubyX - (left.rubyX + left.rubyWidth)
+					gap := line.Width - right.Width + right.rubyState().rubyX - (left.rubyState().rubyX + left.rubyState().rubyWidth)
 					if gap < 6-.001 || line.Width > plainWidth+6+.001 || line.Width < plainWidth-.001 {
 						t.Fatalf("reading gap %.3f, width %.3f, unannotated width %.3f", gap, line.Width, plainWidth)
 					}
@@ -284,7 +284,7 @@ func TestRubyOverhangFallback(t *testing.T) {
 		sh := ShapeText(source, st)
 		for _, line := range sh.Lines {
 			for _, seg := range line.Segments {
-				if len(seg.ruby) > 0 && seg.Width != max(seg.rubyBaseWidth, seg.rubyWidth) {
+				if len(seg.rubyState().ruby) > 0 && seg.Width != max(seg.rubyState().rubyBaseWidth, seg.rubyState().rubyWidth) {
 					t.Fatalf("unsupported neighbor/direction borrows space in %q", source)
 				}
 			}
@@ -323,7 +323,7 @@ func TestRubyLineStartAlignment(t *testing.T) {
 			shaped := ShapeTextMax(text, st, width, Span(at, at+1, FontSize(kanaSize)))
 			for _, line := range shaped.Lines {
 				segment := line.Segments[0]
-				if len(segment.ruby) == 0 {
+				if len(segment.rubyState().ruby) == 0 {
 					continue
 				}
 				base := []rune("鶯")
@@ -335,7 +335,7 @@ func TestRubyLineStartAlignment(t *testing.T) {
 				if math.Abs(float64(painted.Rect.Origin[0]+painted.GlyphOffset[0]-plain.GlyphOffset[0])) > .001 {
 					t.Fatal("line-start base is indented")
 				}
-				if segment.rubyX < 0 {
+				if segment.rubyState().rubyX < 0 {
 					t.Fatal("line-start reading hangs outside margin")
 				}
 			}

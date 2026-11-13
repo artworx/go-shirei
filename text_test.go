@@ -54,7 +54,6 @@ func TestTabStopsThroughShapingAndWrapping(t *testing.T) {
 	}
 }
 
-
 func requireTextShaping(t *testing.T) TextStyleAttrs {
 	t.Helper()
 	InitFontSubsystem()

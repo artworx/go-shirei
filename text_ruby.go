@@ -1,6 +1,7 @@
 package shirei
 
 import (
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -56,6 +57,29 @@ func rubyRanges(text []rune) []rubyRange {
 	return out
 }
 
+// Ruby metadata is allocated only for annotated segments. Ordinary document
+// glyphs and segments retain compact storage for editor traversal and caches.
+type rubyGlyph struct {
+	em      float32
+	cluster int32
+}
+type rubySegmentData struct {
+	ruby                                             []GlyphsSegment
+	rubyTop, rubyX, rubyBaseWidth, rubyWidth, rubyEm float32
+	rubyOverhang                                     bool
+	rubyHeadRoom, rubyTailRoom                       float32
+	glyphs                                           []rubyGlyph
+}
+
+var emptyRubySegment rubySegmentData
+
+func (s GlyphsSegment) rubyState() *rubySegmentData {
+	if s.rubyData != nil {
+		return s.rubyData
+	}
+	return &emptyRubySegment
+}
+
 func produceRubySegments(runes []rune, base TextStyleAttrs, spans []StyleSpan) []GlyphsSegment {
 	ranges := rubyRanges(runes)
 	if len(ranges) == 0 {
@@ -108,22 +132,24 @@ func produceRubySegments(runes []rune, base TextStyleAttrs, spans []StyleSpan) [
 		}
 		segments := produceShapedSegments(runes[from:to], d, style, local)
 		for i := range segments {
+			segments[i].start += from
+			segments[i].rubyData = &rubySegmentData{}
+			segments[i].Glyphs = slices.Clone(segments[i].Glyphs)
 			for j := range segments[i].Glyphs {
 				g := &segments[i].Glyphs[j]
 				g.Cluster += int32(from)
-				g.styleCluster = g.Cluster
 				if !reading && segments[i].Dir == LTR {
 					s := &segments[i]
 					ch := runes[g.Cluster]
 					kana := unicode.Is(unicode.Hiragana, ch) || unicode.Is(unicode.Katakana, ch) || ch == 'ー'
 					if g.Cluster == s.Glyphs[0].Cluster && kana {
-						s.rubyHeadRoom += g.XAdvance
+						s.rubyData.rubyHeadRoom += g.XAdvance
 					}
 					if j == 0 || g.Cluster != s.Glyphs[j-1].Cluster {
-						s.rubyTailRoom = 0
+						s.rubyData.rubyTailRoom = 0
 					}
 					if kana {
-						s.rubyTailRoom += g.XAdvance
+						s.rubyData.rubyTailRoom += g.XAdvance
 					}
 				}
 			}
@@ -144,9 +170,10 @@ func produceRubySegments(runes []rune, base TextStyleAttrs, spans []StyleSpan) [
 		appendPlain(r.from)
 		bases := shape(r.from+1, r.separator, false)
 		readings := shape(r.separator+1, r.to-1, true)
-		group := GlyphsSegment{GlyphSegmentProps: bases[0].GlyphSegmentProps, ruby: readings}
+		group := GlyphsSegment{GlyphSegmentProps: bases[0].GlyphSegmentProps, rubyData: &rubySegmentData{ruby: readings}}
+		group.start, group.length = r.from, r.to-r.from
 		group.lineNo = lineNo
-		group.rubyOverhang = mainLTR
+		group.rubyData.rubyOverhang = mainLTR
 		var baseWidth, readingWidth float32
 		for _, s := range bases {
 			baseWidth += s.Width
@@ -154,22 +181,22 @@ func produceRubySegments(runes []rune, base TextStyleAttrs, spans []StyleSpan) [
 			group.size = max(group.size, s.size)
 			group.descenderDepth = max(group.descenderDepth, s.descenderDepth)
 			for _, g := range s.Glyphs {
-				g.em = s.size
+				group.rubyData.glyphs = append(group.rubyData.glyphs, rubyGlyph{em: s.size, cluster: g.Cluster})
 				g.Cluster = int32(r.from)
 				group.Glyphs = append(group.Glyphs, g)
 			}
 		}
 		for _, s := range readings {
 			readingWidth += s.Width
-			group.rubyEm = max(group.rubyEm, s.size)
-			group.rubyOverhang = group.rubyOverhang && s.Dir == LTR
-			group.rubyTop = max(group.rubyTop, s.size+s.descenderDepth)
+			group.rubyData.rubyEm = max(group.rubyData.rubyEm, s.size)
+			group.rubyData.rubyOverhang = group.rubyData.rubyOverhang && s.Dir == LTR
+			group.rubyData.rubyTop = max(group.rubyData.rubyTop, s.size+s.descenderDepth)
 		}
-		group.rubyTop += group.size * .05
+		group.rubyData.rubyTop += group.size * .05
 		group.Width = max(baseWidth, readingWidth)
-		group.Height += group.rubyTop
-		group.rubyBaseWidth = baseWidth
-		group.rubyWidth = readingWidth
+		group.Height += group.rubyData.rubyTop
+		group.rubyData.rubyBaseWidth = baseWidth
+		group.rubyData.rubyWidth = readingWidth
 		out = append(out, group)
 		at = r.to
 	}
